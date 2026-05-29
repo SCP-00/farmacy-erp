@@ -75,8 +75,6 @@ Farmacy/
 ├── test-e2e-cliente.mjs     # Test E2E flujo cliente (API)
 ├── test-e2e-proveedores.mjs # Test E2E flujo compras (API)
 ├── test-e2e-browser.mjs     # Test E2E flujo cliente (Playwright/browser)
-├── verify-email-helper.mjs  # Helper verificación email por DB
-├── actualizar-precios.sql   # SQL precios reales Colombia
 └── .env.example      # Template de variables de entorno
 ```
 

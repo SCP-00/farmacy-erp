@@ -1,1 +1,0 @@
-try { $c = Get-Content run.ps1 -Raw; $t=$null; $e=$null; [System.Management.Automation.Language.Parser]::ParseInput($c, [ref]$t, [ref]$e); if($e.Count -gt 0){foreach($x in $e){Write-Host ("Linea " + $x.Extent.StartLineNumber + ": " + $x.Message)}} else {Write-Host "SINTAXIS OK"} } catch { Write-Host "ERROR: $_" }
