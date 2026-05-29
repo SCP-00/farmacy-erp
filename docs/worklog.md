@@ -2,6 +2,49 @@
 
 Use this log to record completed milestones and the files changed for each phase.
 
+## 2026-05-29 — Limpieza agresiva de artefactos temporales
+
+**Objetivo:** Eliminar residuos de ejecución que no aportaban al proyecto y que solo ensuciaban la raíz del repo o el directorio de pruebas.
+
+### Cambios realizados
+- Eliminados de la raíz:
+  - `backend-output.log`
+  - `backend.log`
+  - `debug.log`
+  - `frontend.log`
+  - `server.log`
+  - `nul`
+- Vaciado de `test-screenshots/`:
+  - screenshots PNG generados por browser E2E
+  - logs `test-e2e-*.log`
+
+### Validación
+- ✅ `test-screenshots/` quedó vacío
+- ✅ La raíz dejó de mostrar logs temporales y el archivo `nul`
+
+## 2026-05-29 — Reorganización de E2E manuales + limpieza de raíz
+
+**Objetivo:** Sacar scripts manuales sueltos de la raíz y agruparlos en una carpeta dedicada para mantener un root más limpio y con mejor separación entre entrypoints y utilidades.
+
+### Cambios realizados
+- `scripts/e2e/manual/` (NUEVO) — Carpeta para scripts E2E manuales:
+  - `test-e2e-cliente.mjs`
+  - `test-e2e-proveedores.mjs`
+  - `test-e2e-browser.mjs`
+- `package.json` — nuevos scripts:
+  - `pnpm run e2e:cliente`
+  - `pnpm run e2e:proveedores`
+  - `pnpm run e2e:browser`
+- `README.md` — árbol del proyecto y tabla de pruebas actualizados con la nueva ruta
+- Eliminados de la raíz:
+  - `test-e2e-cliente.mjs`
+  - `test-e2e-proveedores.mjs`
+  - `test-e2e-browser.mjs`
+
+### Validación
+- ✅ `node --check` para los 3 scripts movidos
+- ✅ Referencias actualizadas en README y package.json
+
 ## 2026-05-28 — Fase 26: Dark mode rediseñado (paleta gris carbón profesional) + Deploy guide completa + documentación
 
 **Objetivo:** Rediseñar dark mode de alto contraste a paleta gris carbón profesional (VS Code/Slack inspirado), y crear guía paso a paso para deploy en VPS con Docker.

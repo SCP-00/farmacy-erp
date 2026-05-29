@@ -72,9 +72,7 @@ Farmacy/
 ├── run.ps1           # Inicio rápido — PowerShell (recomendado)
 ├── setup.bat         # Setup inicial (Windows)
 ├── setup.sh          # Setup inicial (Linux / macOS)
-├── test-e2e-cliente.mjs     # Test E2E flujo cliente (API)
-├── test-e2e-proveedores.mjs # Test E2E flujo compras (API)
-├── test-e2e-browser.mjs     # Test E2E flujo cliente (Playwright/browser)
+├── scripts/e2e/manual/      # E2E manuales (API + browser)
 └── .env.example      # Template de variables de entorno
 ```
 
@@ -252,9 +250,9 @@ cd frontend && pnpm run dev
 | Backend + coverage | `cd backend && pnpm test -- --coverage` | 95.35% statements |
 | Frontend | `cd frontend && pnpm test` | Tests de componentes |
 | Pentest automático | `bash scripts/security-pentest-avanzado.sh` | ~109 tests de seguridad |
-| E2E Cliente (API) | `node test-e2e-cliente.mjs` | 41 pasos — registro, login, favoritos, venta POS, pedidos, puntos |
-| E2E Proveedores (API) | `node test-e2e-proveedores.mjs` | 46 pasos — OC, recepción, lotes, movimientos |
-| E2E Browser | `node test-e2e-browser.mjs` | 8 páginas, 12 screenshots — Playwright con Chromium |
+| E2E Cliente (API) | `pnpm run e2e:cliente` | 41 pasos — registro, login, favoritos, venta POS, pedidos, puntos |
+| E2E Proveedores (API) | `pnpm run e2e:proveedores` | 46 pasos — OC, recepción, lotes, movimientos |
+| E2E Browser | `pnpm run e2e:browser` | 8 páginas, 12 screenshots — Playwright con Chromium |
 
 ---
 

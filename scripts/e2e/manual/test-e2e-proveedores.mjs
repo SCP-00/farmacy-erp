@@ -15,7 +15,7 @@
  *    9. Verificar movimientos de inventario
  *   10. Verificar alertas de inventario
  *
- *  Ejecutar: node test-e2e-proveedores.mjs
+ *  Ejecutar: node scripts/e2e/manual/test-e2e-proveedores.mjs
  * ═══════════════════════════════════════════════════════════
  */
 
@@ -74,7 +74,7 @@ async function main() {
     log('2', 'Consultando proveedores...')
     const provRes = await apiGet('/proveedores', adminToken)
     proveedores = provRes.data?.data ?? []
-    
+
     if (proveedores.length === 0) {
       // Crear un proveedor si no hay
       log('2', 'No hay proveedores, creando uno...', false)
@@ -104,17 +104,17 @@ async function main() {
     log('3', 'Consultando productos para la orden...')
     const prodRes = await apiGet('/productos/buscar?limite=10')
     productos = prodRes.data?.data ?? []
-    
+
     if (productos.length === 0) throw new Error('No hay productos disponibles')
-    
+
     // Filtrar solo productos con precio (no muestras médicas)
     const productosComprables = productos.filter(p => Number(p.precioVenta) > 0 && !p.esMuestraMedica)
-    
+
     if (productosComprables.length < 2) throw new Error('No hay suficientes productos para la orden')
-    
+
     const prod1 = productosComprables[0]
     const prod2 = productosComprables[1]
-    
+
     log('3', `Productos seleccionados:`)
     log('3', `  ${prod1.nombre} — $${Number(prod1.precioVenta).toLocaleString()}`)
     log('3', `  ${prod2.nombre} — $${Number(prod2.precioVenta).toLocaleString()}`)
@@ -123,7 +123,7 @@ async function main() {
     //  4. CREAR ORDEN DE COMPRA
     // ═══════════════════════════════════════════════════════
     log('4', 'Creando Orden de Compra...')
-    
+
     const detalles = [
       {
         productoId: prod1.id,
@@ -136,7 +136,7 @@ async function main() {
         precioUnitario: Math.round(Number(prod2.precioVenta) * 0.6),
       },
     ]
-    
+
     const fechaEntrega = new Date()
     fechaEntrega.setDate(fechaEntrega.getDate() + 15)
 
@@ -154,7 +154,7 @@ async function main() {
 
     ordenCreada = ocRes.data.data
     const totalOC = ordenCreada.detalles?.reduce((sum, d) => sum + Number(d.subtotal), 0) || ordenCreada.total
-    
+
     log('4', `Orden de Compra creada:`)
     log('4', `  ID:       ${ordenCreada.id}`)
     log('4', `  Estado:   ${ordenCreada.estado}`)
@@ -168,12 +168,12 @@ async function main() {
     log('5', 'Verificando OC por ID...')
     const ocDetRes = await apiGet(`/compras/${ordenCreada.id}`, adminToken)
     if (!ocDetRes.ok) throw new Error(`Verificar OC falló: ${ocDetRes.data?.error || ocDetRes.status}`)
-    
+
     const ocDetalle = ocDetRes.data.data
     log('5', `OC #${ocDetalle.id?.substring(0, 8)} — ${ocDetalle.estado}`)
     log('5', `Proveedor: ${ocDetalle.proveedor?.nombre}`)
     log('5', `Creado por: ${ocDetalle.empleado?.nombre} ${ocDetalle.empleado?.apellido || ''}`)
-    
+
     if (ocDetalle.detalles?.length > 0) {
       log('5', '  Detalles:')
       ocDetalle.detalles.forEach(d => {
@@ -185,7 +185,7 @@ async function main() {
     //  6. RECIBIR MERCANCÍA (CREAR LOTES)
     // ═══════════════════════════════════════════════════════
     log('6', 'Recibiendo mercancía y creando lotes...')
-    
+
     const fechaVen1 = new Date()
     fechaVen1.setFullYear(fechaVen1.getFullYear() + 2)
     const fechaVen2 = new Date()
@@ -216,14 +216,14 @@ async function main() {
     if (!recibirRes.ok) {
       const errMsg = recibirRes.data?.error || JSON.stringify(recibirRes.data).substring(0, 200)
       error('6', `Recibir mercancía falló: ${errMsg}`)
-      
+
       // Intentar con proveedorId incluido
       log('6', 'Reintentando con ajustes...', false)
       const recibirRes2 = await apiPost(`/compras/${ordenCreada.id}/recibir`, {
         sucursalId: SUCURSAL_ID,
         lotes: lotesRecibidos.map(l => ({ ...l, proveedorId: proveedor.id })),
       }, adminToken)
-      
+
       if (!recibirRes2.ok) {
         const errMsg2 = recibirRes2.data?.error || JSON.stringify(recibirRes2.data).substring(0, 200)
         throw new Error(`Recibir mercancía (intento 2) falló: ${errMsg2}`)
@@ -237,7 +237,7 @@ async function main() {
     //  7. VERIFICAR LOTES CREADOS
     // ═══════════════════════════════════════════════════════
     log('7', 'Verificando lotes creados...')
-    
+
     // Verificar directamente en DB como fuente de verdad
     const { execSync } = await import('child_process')
     let dbLotes = []
@@ -254,13 +254,13 @@ async function main() {
       })
       dbLotesCount = dbLotes.length
     } catch (e) {}
-    
+
     if (dbLotesCount > 0) {
       log('7', `Lotes nuevos encontrados en DB: ${dbLotesCount}`)
       dbLotes.forEach(l => {
         log('7', `  ${l.codigoLote} — ${l.cantidadActual} unds`)
       })
-      
+
       // Verificación secundaria vía API (sin filtro de sucursal para máxima cobertura)
       try {
         const lotesRes = await apiGet('/lotes?limite=20', adminToken)
@@ -272,7 +272,7 @@ async function main() {
       } catch {}
     } else {
       error('7', 'No se encontraron lotes nuevos en DB. La recepción de mercancía podría no estar creando lotes.')
-      
+
       // Mostrar últimos lotes de todas formas
       const allLotesRes = await apiGet('/lotes?limite=5', adminToken)
       const allLotes = allLotesRes.data?.data ?? []
@@ -290,7 +290,7 @@ async function main() {
     log('8', 'Verificando estado de la OC...')
     const ocFinalRes = await apiGet(`/compras/${ordenCreada.id}`, adminToken)
     const ocFinal = ocFinalRes.data?.data ?? {}
-    
+
     if (ocFinal.estado === 'RECIBIDA') {
       log('8', `✅ OC #${ocFinal.id?.substring(0,8)} — Estado: ${ocFinal.estado} — Recibida: ${ocFinal.recibidaEn ? new Date(ocFinal.recibidaEn).toLocaleString() : 'N/A'}`)
     } else {
@@ -303,7 +303,7 @@ async function main() {
     log('9', 'Verificando movimientos de inventario...')
     const movRes = await apiGet('/inventario/movimientos?limite=5', adminToken)
     const movimientos = movRes.data?.data ?? []
-    
+
     log('9', `Movimientos registrados: ${movimientos.length}`)
     if (movimientos.length > 0) {
       movimientos.slice(0, 3).forEach(m => {
@@ -317,7 +317,7 @@ async function main() {
     log('10', 'Listando órdenes de compra...')
     const ordenesRes = await apiGet('/compras?limite=5', adminToken)
     const ordenes = ordenesRes.data?.data ?? []
-    
+
     log('10', `Órdenes de compra totales: ${ordenesRes.data?.meta?.total || ordenes.length}`)
     if (ordenes.length > 0) {
       ordenes.forEach((o, i) => {
@@ -334,17 +334,17 @@ async function main() {
     console.log('\n' + '═'.repeat(55))
     console.log('  RESUMEN — FLUJO PROVEEDORES')
     console.log('═'.repeat(55))
-    
+
     const failed = logs.filter(l => l.startsWith('❌'))
     const passed = logs.filter(l => l.startsWith('✅'))
-    
+
     console.log(`\n  Total: ${logs.length} | ✅ ${passed.length} | ❌ ${failed.length}\n`)
-    
+
     if (failed.length > 0) {
       console.log('  Fallos:')
       failed.forEach(l => console.log(`    ${l}`))
     }
-    
+
     console.log(`\n  Orden de Compra creada: ${ordenCreada.estado}`)
     console.log(`  Productos ordenados: ${detalles.length}`)
     console.log(`  Lotes creados: ${lotesRecibidos.length}`)

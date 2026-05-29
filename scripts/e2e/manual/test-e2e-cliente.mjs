@@ -16,7 +16,7 @@
  *   10. Verificar puntos acumulados
  *   11. (Opcional) Navegación frontend con screenshots
  *
- *  Ejecutar: node test-e2e-cliente.mjs
+ *  Ejecutar: node scripts/e2e/manual/test-e2e-cliente.mjs
  * ═══════════════════════════════════════════════════════════
  */
 
@@ -65,7 +65,7 @@ async function verifyEmailHelper(email) {
   )
   const token = result.trim()
   if (!token) throw new Error('No se encontró token de verificación')
-  
+
   const res = await apiPost('/clientes/auth/verificar-email', { token })
   if (!res.ok) throw new Error(`Error verificando email: ${res.data?.error || res.status}`)
   return true
@@ -118,7 +118,7 @@ async function main() {
     const prodRes = await apiGet('/productos/buscar?limite=5')
     productos = prodRes.data?.data ?? []
     if (productos.length === 0) throw new Error('No hay productos disponibles')
-    
+
     productos.forEach((p, i) => {
       log('4', `  #${i+1}: ${p.nombre} — $${Number(p.precioVenta).toLocaleString()} — Stock: ${p.stock || 'N/A'}`)
     })
@@ -187,12 +187,12 @@ async function main() {
         descuento: 0,
         items: itemsVenta,
       }, adminToken)
-      
+
       if (!ventaRes2.ok) {
         const errMsg = ventaRes2.data?.error || JSON.stringify(ventaRes2.data).substring(0, 200)
         throw new Error(`Venta falló: ${errMsg}`)
       }
-      
+
       log('6c', `Venta registrada (sin cliente): #${ventaRes2.data.data?.numero || ventaRes2.data.data?.id}`)
     } else {
       const v = ventaRes.data.data
@@ -206,7 +206,7 @@ async function main() {
     const ventasRes = await apiGet('/ventas?limite=5', adminToken)
     const ventas = ventasRes.data?.data ?? []
     log('7', `Total ventas registradas: ${ventas.length}`)
-    
+
     if (ventas.length > 0) {
       const ultima = ventas[0]
       log('7', `Última venta: #${ultima.numero} — ${ultima.estado} — $${Number(ultima.total).toLocaleString()}`)
@@ -243,12 +243,12 @@ async function main() {
     const pedidosRes = await apiGet('/clientes/auth/pedidos', clienteToken)
     const pedidos = pedidosRes.data?.data ?? []
     log('10', `Pedidos encontrados: ${pedidos.length}`)
-    
+
     if (pedidos.length > 0) {
       pedidos.forEach((p, i) => {
         const num = p.numero ? `#F-${String(p.numero).padStart(5, '0')}` : `#${p.id?.substring(0,8)}`
         log('10', `  ${i+1}. ${num} — ${p.estado} — $${Number(p.total).toLocaleString()} — ${new Date(p.creadoEn).toLocaleDateString()}`)
-        
+
         if (p.detalles?.length > 0) {
           p.detalles.forEach(d => {
             log('10', `       ${d.producto?.nombre || 'Producto'} x${d.cantidad} = $${Number(d.subtotal).toLocaleString()}`)
@@ -266,11 +266,11 @@ async function main() {
     log('11', 'Consultando perfil y puntos...')
     const meRes = await apiGet('/clientes/auth/me', clienteToken)
     const perfil = meRes.data?.data ?? {}
-    
+
     log('11', `Cliente: ${perfil.nombre || CLIENTE.nombre} ${perfil.apellido || CLIENTE.apellido}`)
     log('11', `Email:   ${perfil.email || CLIENTE.email}`)
     log('11', `Puntos:  ${perfil.puntosAcumulados ?? 0} puntos`)
-    
+
     if (perfil.puntosExpiranEn) {
       log('11', `Expiran: ${new Date(perfil.puntosExpiranEn).toLocaleDateString()}`)
     }
@@ -296,12 +296,12 @@ async function main() {
   console.log('\n' + '═'.repeat(55))
   console.log('  RESUMEN DE PRUEBAS')
   console.log('═'.repeat(55))
-  
+
   const failed = logs.filter(l => l.startsWith('❌') || l.startsWith('💥'))
   const passed = logs.filter(l => l.startsWith('✅'))
-  
+
   console.log(`\n  Total: ${logs.length} | ✅ ${passed.length} | ❌ ${failed.length}\n`)
-  
+
   if (failed.length > 0) {
     console.log('  Fallos:')
     failed.forEach(l => console.log(`    ${l}`))

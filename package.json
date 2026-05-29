@@ -1,5 +1,8 @@
 {
   "scripts": {
+    "e2e:cliente": "node scripts/e2e/manual/test-e2e-cliente.mjs",
+    "e2e:proveedores": "node scripts/e2e/manual/test-e2e-proveedores.mjs",
+    "e2e:browser": "node scripts/e2e/manual/test-e2e-browser.mjs",
     "e2e": "npx playwright test --config=e2e/playwright.config.ts",
     "e2e:ui": "npx playwright test --ui --config=e2e/playwright.config.ts",
     "e2e:headed": "npx playwright test --headed --config=e2e/playwright.config.ts",

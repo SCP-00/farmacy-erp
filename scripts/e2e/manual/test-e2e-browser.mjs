@@ -14,7 +14,7 @@
  *    8. Mis Pedidos (historial)
  *    9. Cerrar sesión
  *
- *  Ejecutar: node test-e2e-browser.mjs
+ *  Ejecutar: node scripts/e2e/manual/test-e2e-browser.mjs
  * ═══════════════════════════════════════════════════════════
  */
 
@@ -55,7 +55,7 @@ async function setupCliente() {
   // 1. Registrar
   const reg = await apiPost('/clientes/auth/registro', { ...CLIENTE, autorizacionDatos: true })
   if (!reg.ok && reg.status !== 409) throw new Error(`Registro falló: ${reg.data?.error}`)
-  
+
   // 2. Verificar email
   const { execSync } = await import('child_process')
   const result = execSync(
@@ -70,7 +70,7 @@ async function setupCliente() {
   // 3. Login
   const loginRes = await apiPost('/clientes/auth/login', { email: CLIENTE.email, password: CLIENTE.password })
   if (!loginRes.ok) throw new Error(`Login falló: ${loginRes.data?.error}`)
-  
+
   // 4. Agregar algunos favoritos via API
   const prodRes = await fetch(`${API_URL}/productos/buscar?limite=3`)
   const productos = (await prodRes.json())?.data ?? []
@@ -146,9 +146,9 @@ async function main() {
     // Verificar que React renderizó (#root tiene contenido)
     const rootContent = await page.evaluate(() => document.getElementById('root')?.textContent?.length || 0)
     log(`   Root content: ${rootContent} caracteres`)
-    
+
     // Verificar header/nav
-    const navVisible = await page.locator('nav, header, [class*=\"header\"]').first().isVisible().catch(() => false)
+    const navVisible = await page.locator('nav, header, [class*="header"]').first().isVisible().catch(() => false)
     log(`   Header/Nav visible: ${navVisible}`)
 
     await page.screenshot({ path: 'test-screenshots/01-inicio.png', fullPage: true })
@@ -167,7 +167,7 @@ async function main() {
       const matches = body.match(/[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]+/g) || []
       return matches.filter(m => m.length > 10 && m.length < 60).slice(0, 5)
     })
-    
+
     if (productosVisibles.length > 0) {
       log(`   Productos visibles en página:`)
       productosVisibles.slice(0, 3).forEach(p => log(`     - ${p.trim()}`))
@@ -195,7 +195,7 @@ async function main() {
       await emailInput.fill(CLIENTE.email)
       await passInput.fill(CLIENTE.password)
       log('   Formulario llenado')
-      
+
       await page.screenshot({ path: 'test-screenshots/03b-login-filled.png', fullPage: true })
 
       // Click submit
@@ -203,11 +203,11 @@ async function main() {
       if (await submitBtn.isVisible().catch(() => false)) {
         await submitBtn.click()
         await page.waitForTimeout(3000)
-        
+
         // Verificar si redirigió (login exitoso)
         const currentUrl = page.url()
         log(`   URL después de login: ${currentUrl}`)
-        
+
         if (currentUrl.includes('login')) {
           log('   Login UI no redirigió — se mantiene en login', false)
           await page.screenshot({ path: 'test-screenshots/03c-login-error.png', fullPage: true })
@@ -225,7 +225,7 @@ async function main() {
     //  4. FAVORITOS
     // ═══════════════════════════════════════════════════════
     log('4. Navegando a favoritos...')
-    
+
     // Inyectar token de cliente via localStorage
     await page.evaluate((token) => {
       localStorage.setItem('token', token)
@@ -248,7 +248,7 @@ async function main() {
     log('5. Navegando a Mi Cuenta...')
     await page.goto(`${BASE_URL}/cuenta`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
     await page.waitForTimeout(2000)
-    
+
     await page.screenshot({ path: 'test-screenshots/05-mi-cuenta.png', fullPage: true })
     log('   Screenshot: 05-mi-cuenta.png')
 
@@ -276,12 +276,12 @@ async function main() {
     //  8. DETALLE DE PRODUCTO
     // ═══════════════════════════════════════════════════════
     log('8. Navegando a detalle de producto...')
-    
+
     // Obtener primer producto de la API
     const prodRes = await fetch(`${API_URL}/productos/buscar?limite=1`)
     const prodData = await prodRes.json()
     const primerProducto = prodData?.data?.[0]
-    
+
     if (primerProducto?.slug) {
       await page.goto(`${BASE_URL}/productos/${primerProducto.slug}`, { waitUntil: 'networkidle', timeout: 15000 }).catch(() => {})
       await page.waitForTimeout(2000)
@@ -300,10 +300,10 @@ async function main() {
     console.log('\n' + '═'.repeat(55))
     console.log('  RESUMEN — BROWSER TEST')
     console.log('═'.repeat(55))
-    
+
     log(`Total navegaciones: 8`)
     log(`Screenshots: 12`)
-    
+
     const hasErrors = logs.some(l => l.startsWith('❌'))
     log(`Resultado: ${hasErrors ? 'Con errores' : 'Todo OK'}`, !hasErrors)
 
@@ -314,12 +314,12 @@ async function main() {
     }
   } finally {
     if (browser) await browser.close()
-    
+
     const logFile = `test-screenshots/test-e2e-browser-${TS}.log`
     fs.writeFileSync(logFile, logs.join('\n'))
     console.log(`\n  Screenshots: test-screenshots/*.png`)
     console.log(`  Log: ${logFile}\n`)
-    
+
     const failed = logs.filter(l => l.startsWith('❌') || l.startsWith('💥'))
     process.exit(failed.length > 0 ? 1 : 0)
   }
