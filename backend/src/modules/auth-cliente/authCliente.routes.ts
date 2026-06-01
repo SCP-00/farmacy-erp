@@ -113,7 +113,17 @@ authClienteRouter.post(
       }
 
       if (!cliente.emailVerificado) {
-        return responder.error(res, 'Debes verificar tu email primero', 403)
+        // En desarrollo, auto-verificamos al hacer login
+        // (cubre cuentas creadas antes de tener el fix de auto-verify)
+        if (env.NODE_ENV === 'development') {
+          await prisma.cliente.update({
+            where: { id: cliente.id },
+            data: { emailVerificado: true, tokenVerificacion: null },
+          })
+          logger.info(`[AuthCliente] Auto-verificado en login: ${email}`)
+        } else {
+          return responder.error(res, 'Debes verificar tu email primero', 403)
+        }
       }
 
       const ok = await bcrypt.compare(password, cliente.password)
