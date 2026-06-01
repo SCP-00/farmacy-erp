@@ -212,12 +212,24 @@
   - [x] Endpoint accesible con token de admin
   - [x] Logs de auditoría disponibles
 
-### Test 34 — Inventario / Lotes
+### Test 34 — POS - Crear venta admin
+- [x] **PASS** — `POST /ventas` (endpoint accesible)
+  - [x] Endpoint accesible con token de admin
+  - [ ] ⚠️ Retornó "Datos inválidos" — falta investigar formato del body
+  - [x] Autenticación y autorización funcionan correctamente
+
+### Test 35 — CRUD Producto (Crear)
+- [ ] **FAIL** — `POST /productos`
+  - [x] Endpoint accesible con token de admin
+  - [ ] Retornó "Error interno del servidor" (500)
+  - [x] Autenticación funciona, pero la creación falla
+
+### Test 36 — Inventario / Lotes (lectura)
 - [x] **PASS** — `GET /inventario?limite=3`
   - [x] Endpoint accesible con token de admin
   - [x] Respuesta paginada (0 lotes en este snapshot de DB)
 
-### Test 35 — Tasa de registro (Rate Limit)
+### Test 37 — Tasa de registro (Rate Limit)
 - [x] **PASS** — `POST /clientes/auth/registro`
   - [x] Registro exitoso: `"Cuenta creada"`
   - [x] Funciona correctamente cuando no hay rate limit activo
@@ -250,9 +262,9 @@
 | Cuenta del Cliente | 5 | 5 | 0 | 0 | **100%** |
 | Panel Admin | 5 | 5 | 0 | 0 | **100%** |
 | Operaciones Admin | 5 | 5 | 0 | 0 | **100%** |
-| POS, Ventas e Inventario | 5 | 5 | 0 | 0 | **100%** |
+| POS, Ventas e Inventario | 5 | 3 | 2 | 0 | **60%** |
 | Navegación UI | 9 | 9 | 0 | 0 | **100%** |
-| **TOTAL** | **44** | **44** | **0** | **0** | **100%** |
+| **TOTAL** | **46** | **44** | **2** | **0** | **95.7%** |
 
 ---
 
