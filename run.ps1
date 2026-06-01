@@ -111,6 +111,80 @@ function Get-ProcessOnPort {
     return $null
 }
 
+# Procesos que NUNCA deben ser terminados (Codebuff / freebuff)
+$script:SAFE_PROCESS_NAMES = @('freebuff', 'codebuff')
+
+function Stop-ProcessOnPort {
+    <#
+    .SYNOPSIS
+      Mata procesos zombies en un puerto especifico.
+    .DESCRIPTION
+      Verifica que el proceso NO sea Codebuff/freebuff antes de matarlo.
+      Si el proceso sobrevive al SIGTERM, espera y reintenta una vez.
+    #>
+    param(
+        [int]$Port,
+        [string]$Label = ''
+    )
+
+    $pids = @()
+    try {
+        $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+        if ($conns) { $pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique }
+    } catch {}
+
+    if (-not $pids -or $pids.Count -eq 0) {
+        return $true
+    }
+
+    foreach ($pid in $pids) {
+        # Obtener nombre del proceso para seguridad
+        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        if (-not $proc) { continue }
+
+        $procName = $proc.ProcessName.ToLower()
+        $isProtected = $false
+        foreach ($safe in $script:SAFE_PROCESS_NAMES) {
+            if ($procName -like "*$safe*") {
+                $isProtected = $true
+                break
+            }
+        }
+
+        if ($isProtected) {
+            Write-Warn "PID $pid ($($proc.ProcessName)) es Codebuff/freebuff — NO se termina."
+            return $false
+        }
+
+        # Intentar terminar
+        $labelInfo = if ($Label) { " ($Label)" } else { '' }
+        Write-Warn "Terminando proceso zombie PID $pid ($($proc.ProcessName))$labelInfo en puerto $Port..."
+        try {
+            Stop-Process -Id $pid -Force -ErrorAction Stop
+        } catch {
+            Write-Err "No se pudo terminar PID $pid: $_"
+            return $false
+        }
+    }
+
+    # Esperar a que el puerto se libere
+    Start-Sleep -Seconds 2
+
+    # Verificar
+    $stillOccupied = Get-ProcessOnPort -Port $Port
+    if ($stillOccupied) {
+        Write-Warn "Puerto $Port sigue ocupado tras 2s, esperando mas..."
+        Start-Sleep -Seconds 3
+        $stillOccupied = Get-ProcessOnPort -Port $Port
+        if ($stillOccupied) {
+            Write-Err "Puerto $Port no se pudo liberar (PID $stillOccupied persiste)"
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Start-HealthcheckLoop {
     $maxAttempts = [math]::Floor($HEALTHCHECK_TIMEOUT / $HEALTHCHECK_INTERVAL)
     $attempt = 0
@@ -249,31 +323,49 @@ try {
         exit 1
     }
 
-    # -- [4/8] Verificar puertos disponibles -------------------
-    Write-Step 4 8 "Verificando puertos 3000 y 5173..."
+    # -- [4/8] Verificar y liberar puertos ---------------------
+    Write-Step 4 8 "Verificando y liberando puertos 3000 y 5173..."
+
+    # --- Puerto 3000 (Backend) ---
+    $port3000 = Get-ProcessOnPort -Port 3000
+    if ($port3000) {
+        $killed = Stop-ProcessOnPort -Port 3000 -Label 'backend'
+        if ($killed) {
+            Write-OK "Puerto 3000 liberado (proceso zombie eliminado)"
+        } else {
+            Write-Warn "Puerto 3000 puede seguir ocupado — el backend podria fallar al iniciar"
+            Write-Host "   Para liberarlo manualmente:  Stop-Process -Id $port3000 -Force"
+        }
+    }
+
+    # --- Puerto 5173 (Frontend) ---
+    $port5173 = Get-ProcessOnPort -Port 5173
+    if ($port5173) {
+        $killed = Stop-ProcessOnPort -Port 5173 -Label 'frontend'
+        if ($killed) {
+            Write-OK "Puerto 5173 liberado (proceso zombie eliminado)"
+        } else {
+            Write-Warn "Puerto 5173 puede seguir ocupado — el frontend podria fallar al iniciar"
+            Write-Host "   Para liberarlo manualmente:  Stop-Process -Id $port5173 -Force"
+        }
+    }
+
+    # --- Verificacion final ---
     $port3000 = Get-ProcessOnPort -Port 3000
     $port5173 = Get-ProcessOnPort -Port 5173
-    if ($port3000) {
-        Write-Warn "Puerto 3000 en uso por PID $port3000 - el backend podria fallar si no se libera"
-        Write-Host "   Para liberarlo manualmente:  Stop-Process -Id $port3000 -Force"
+    if (-not $port3000 -and -not $port5173) {
+        Write-OK "Puertos 3000 y 5173 disponibles"
     }
-    if ($port5173) {
-        Write-Warn "Puerto 5173 en uso por PID $port5173 - el frontend podria fallar si no se libera"
-        Write-Host "   Para liberarlo manualmente:  Stop-Process -Id $port5173 -Force"
-    }
-    # Advertencia MSYS: verificar si el backend se ejecutó desde Git Bash
+
+    # Advertencia MSYS: verificar si el backend se ejecuto desde Git Bash
     # (La variable MSYSTEM solo existe en shells MSYS)
     if ($env:MSYSTEM) {
         Write-Warn "Estas ejecutando este script desde un shell MSYS ($($env:MSYSTEM))"
         Write-Host "   run.ps1 inicia los servidores via PowerShell nativo, asi que no hay problema."
         Write-Host "   Pero si ejecutas comandos directamente (pnpm run dev) desde esta terminal,"
-        Write-Host "   MSYS traduce /api/v1 → C:/Program Files/Git/api/v1 y rompe las rutas API."
+        Write-Host "   MSYS traduce /api/v1 -> C:/Program Files/Git/api/v1 y rompe las rutas API."
         Write-Host "   Para evitarlo:  MSYS2_ARG_CONV_EXCL='*' pnpm run dev"
         Write-Host "   O mejor:  .\run.ps1 desde PowerShell nativo."
-    }
-
-    if (-not $port3000 -and -not $port5173) {
-        Write-OK "Puertos disponibles"
     }
 
     # -- [5/8] Verificar .env -----------------------------------

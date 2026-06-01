@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle, CreditCard, Lock, Tag, Coins, Building2, Banknote, Loader2, Wallet, AlertCircle, RefreshCw, XCircle, Info, ShoppingCart, Heart, Truck } from 'lucide-react'
 import { useCarritoStore } from '@/store/carritoStore'
@@ -140,48 +140,6 @@ function SkeletonPago() {
   )
 }
 
-function SimulacionPasarela({ metodo, onComplete, onCancel }: { metodo: MetodoPago; onComplete: () => void; onCancel: () => void }) {
-  const [step, setStep] = useState(0)
-  const steps: Record<MetodoPago, string[]> = {
-    WOMPI: ['Conectando con Wompi...', 'Generando transaccion segura...', 'Redirigiendo a PSE / Nequi...'],
-    STRIPE: ['Inicializando Stripe Elements...', 'Validando tarjeta 3D Secure...', 'Procesando pago...'],
-    MERCADOPAGO: ['Redirigiendo a Mercado Pago...', 'Abrindo checkout seguro...', 'Completando pago...'],
-    EFECTIVO: ['Verificando disponibilidad...', 'Preparando orden contra entrega...', 'Confirmando datos de envio...'],
-  }
-  const icons: Record<MetodoPago, React.ReactNode> = {
-    WOMPI: <Building2 className="w-12 h-12 text-purple-600" />,
-    STRIPE: <CreditCard className="w-12 h-12 text-indigo-600" />,
-    MERCADOPAGO: <Wallet className="w-12 h-12 text-blue-600" />,
-    EFECTIVO: <Banknote className="w-12 h-12 text-emerald-600" />,
-  }
-  useEffect(() => {
-    setStep(0)
-    const t1 = setTimeout(() => setStep(1), 600)
-    const t2 = setTimeout(() => setStep(2), 1400)
-    const t3 = setTimeout(() => onComplete(), 2400)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
-  }, [metodo, onComplete])
-  return (
-    <div className="flex flex-col items-center justify-center py-16 px-8 animate-fade-in">
-      <button onClick={onCancel} className="self-start mb-4 text-sm text-gray-400 hover:text-gray-600 transition flex items-center gap-1">
-        <ArrowLeft className="w-4 h-4" /> Cancelar y volver
-      </button>
-      <div className="relative mb-8">
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-teal-100/50 to-transparent animate-pulse rounded-full blur-xl" />
-        <div className="relative">{icons[metodo]}</div>
-      </div>
-      <div className="flex items-center gap-3 mb-4">
-        <Loader2 className="w-5 h-5 text-teal-600 animate-spin" />
-        <p className="text-lg font-semibold text-gray-800">{steps[metodo][step]}</p>
-      </div>
-      <div className="w-48 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-        <div className="h-full bg-gradient-to-r from-teal-500 to-teal-600 rounded-full transition-all duration-500" style={{ width: `${((step + 1) / 3) * 100}%` }} />
-      </div>
-      <p className="text-xs text-gray-400 mt-3">Modo sandbox - simulacion educativa</p>
-    </div>
-  )
-}
-
 function ErrorCard({ mensaje, onReintentar, onVolver }: { mensaje: string; onReintentar: () => void; onVolver: () => void }) {
   return (
     <div className="flex flex-col items-center py-12 px-8 animate-fade-in">
@@ -222,7 +180,7 @@ function Checkout() {
   const qc = useQueryClient()
   const { items, subtotal, limpiar } = useCarritoStore()
   const { cliente } = useAuthCliente()
-  const [paso, setPaso] = useState<'datos' | 'pago' | 'simulando' | 'confirmacion' | 'error'>('datos')
+  const [paso, setPaso] = useState<'datos' | 'pago' | 'confirmacion' | 'error'>('datos')
   const [metodoPago, setMetodoPago] = useState<MetodoPago | null>(null)
   const [pedidoInfo, setPedidoInfo] = useState<{ numero: number; total: number; puntosGanados: number; metodoPago: MetodoPago } | null>(null)
   const DATOS_STORAGE_KEY = 'checkout_datos_envio'
@@ -243,6 +201,21 @@ function Checkout() {
   const [codigo, setCodigo] = useState('')
   const [descuento, setDescuento] = useState(0)
   const [usarPuntos, setUsarPuntos] = useState(false)
+
+  // ── Detectar cambio de usuario y limpiar datos de envío ──
+  const clienteIdRef = useRef<string | undefined>(cliente?.id)
+  useEffect(() => {
+    if (cliente?.id && cliente.id !== clienteIdRef.current) {
+      clienteIdRef.current = cliente.id
+      try { localStorage.removeItem(DATOS_STORAGE_KEY) } catch { /* ignore */ }
+      setDatos({ nombre: cliente?.nombre || '', email: cliente?.email || '', telefono: '', direccion: '' })
+      setTocados({})
+      setErrores({})
+    }
+    if (!cliente) {
+      clienteIdRef.current = undefined
+    }
+  }, [cliente?.id])
 
   const sub = subtotal()
   const saldoPts = (cliente as unknown as { puntos?: number })?.puntos ?? 0
@@ -328,14 +301,15 @@ function Checkout() {
     mutationFn: () => clientesService.comprar({
       metodoPago: metodoPago ?? 'EFECTIVO',
       descuento,
+      puntosUsados: usarPuntos ? valPts : 0,
       ciudad: ciudadEnvio,
       direccionEnvio: datos.direccion,
       items: items.map(i => ({ productoId: i.productoId, cantidad: i.cantidad, precioUnitario: i.precioUnitario })),
     }),
     onSuccess: (data: any) => {
       setPedidoInfo({ numero: data?.numero ?? 0, total: data?.total ?? total, puntosGanados: data?.puntosGanados ?? ptsGanados, metodoPago: metodoPago ?? 'EFECTIVO' })
-      // Para MERCADOPAGO: no mostrar confirmación aún — el mutate() maneja el redirect
-      if (metodoPago !== 'MERCADOPAGO') {
+      // Para pasarelas: no mostrar confirmación aún — el callback maneja el redirect
+      if (metodoPago !== 'MERCADOPAGO' && metodoPago !== 'WOMPI' && metodoPago !== 'STRIPE') {
         limpiar(); qc.invalidateQueries({ queryKey: ['productos'] }); qc.invalidateQueries({ queryKey: ['cliente'] }); setPaso('confirmacion')
       }
     },
@@ -406,50 +380,72 @@ function Checkout() {
 
   const ejecutarPago = () => {
     if (metodoPago === 'EFECTIVO') { ventaMut.mutate(); return }
-    if (metodoPago === 'MERCADOPAGO') {
-      // Crear la venta y luego redirigir a MercadoPago
-      ventaMut.mutate(undefined, {
-        onSuccess: async (data: any) => {
-          try {
-            const mpRes = await pagosService.crearMercadoPago({
-              ventaId: data?.id,
-              items: items.map(i => ({
-                nombre: i.nombre,
-                cantidad: i.cantidad,
-                precioUnitario: i.precioUnitario,
-              })),
-              monto: total,
-              clienteEmail: datos.email,
-            })
-            if (mpRes?.initPoint) {
-              window.location.href = mpRes.initPoint
-              return
-            }
-          } catch (e) {
-            console.error('[MercadoPago] Error al crear preferencia:', e)
+
+    // Pasarelas: crear venta primero, luego redirigir/abrir checkout
+    const procesarPasarela = async (data: any) => {
+      try {
+        if (metodoPago === 'WOMPI') {
+          const wompiRes = await pagosService.crearWompi(data?.ventaId, total)
+          if (wompiRes?.publicKey) {
+            // Redirigir al checkout de Wompi con los parámetros necesarios
+            const wompiUrl = `https://checkout.wompi.co/p/?public-key=${wompiRes.publicKey}&currency=${wompiRes.currency}&amount-in-cents=${wompiRes.amountInCents}&reference=${wompiRes.reference}&signature=${wompiRes.signature}&redirect-url=${encodeURIComponent(wompiRes.redirectUrl)}&customer-email=${encodeURIComponent(wompiRes.customerEmail)}`
+            window.location.href = wompiUrl
+            return
           }
-          // Fallback: mostrar confirmación local
-          limpiar(); qc.invalidateQueries({ queryKey: ['productos'] }); qc.invalidateQueries({ queryKey: ['cliente'] })
-          setPaso('confirmacion')
-        },
-        onError: (err: any) => {
-          setErrorPago(err?.response?.data?.error ?? 'Error al procesar el pedido.')
-          setPaso('error')
-        },
-      })
-      return
+        }
+        if (metodoPago === 'STRIPE') {
+          const stripeRes = await pagosService.crearStripeIntent(data?.ventaId)
+          if (stripeRes?.sessionUrl) {
+            // Redirigir a Stripe Checkout Session (redirect flow)
+            window.location.href = stripeRes.sessionUrl
+            return
+          }
+        }
+        if (metodoPago === 'MERCADOPAGO') {
+          const mpRes = await pagosService.crearMercadoPago({
+            ventaId: data?.ventaId,
+            items: items.map(i => ({
+              nombre: i.nombre,
+              cantidad: i.cantidad,
+              precioUnitario: i.precioUnitario,
+            })),
+            monto: total,
+            clienteEmail: datos.email,
+          })
+          if (mpRes?.initPoint) {
+            window.location.href = mpRes.initPoint
+            return
+          }
+        }
+      } catch (e) {
+        console.error(`[${metodoPago}] Error al inicializar pasarela:`, e)
+      }
+      // Fallback: mostrar confirmación local (venta creada como PENDIENTE)
+      toast.success('Pedido registrado. Recibirás notificaciones sobre el estado del pago.')
+      limpiar(); qc.invalidateQueries({ queryKey: ['productos'] }); qc.invalidateQueries({ queryKey: ['cliente'] })
+      setPaso('confirmacion')
     }
-    setPaso('simulando')
+
+    ventaMut.mutate(undefined, {
+      onSuccess: async (data: any) => {
+        await procesarPasarela(data)
+      },
+      onError: (err: any) => {
+        setErrorPago(err?.response?.data?.error ?? 'Error al procesar el pedido.')
+        setPaso('error')
+      },
+    })
   }
 
   const handleReintentar = () => {
-    setPaso('simulando')
+    setPaso('pago')
     setErrorPago('')
   }
 
   const handleCancelarPago = () => {
     setPaso('pago')
     setErrorPago('')
+    setMetodoPago(null)
   }
 
   // ── Pantalla: carrito vacío ────────────────────────────────
@@ -528,18 +524,6 @@ function Checkout() {
     )
   }
 
-  // ── Pantalla: simulación de pasarela ───────────────────────
-  if (paso === 'simulando' && metodoPago) {
-    return (
-      <div className="section-shell py-12 flex justify-center">
-        <div className="surface p-10 max-w-lg w-full">
-          <StepIndicator paso={2} />
-          <SimulacionPasarela metodo={metodoPago} onComplete={() => ventaMut.mutate()} onCancel={handleCancelarPago} />
-        </div>
-      </div>
-    )
-  }
-
   // ── Pantalla principal: datos + pago ────────────────────────
   return (
     <>
@@ -563,6 +547,32 @@ function Checkout() {
             {paso === 'datos' && (
               <div className="animate-fade-in">
                 <p className="text-sm text-gray-500 mb-6">Ingresa tus datos para realizar el envio</p>
+
+                {/* ── Indicador de ciudad detectada y costo de envío ── */}
+                {datos.direccion.trim().length >= 5 && (
+                  <div className="mb-5 p-4 rounded-xl bg-sky-50 border border-sky-200 text-sm">
+                    <div className="flex items-center gap-2 text-sky-800 font-medium mb-1">
+                      <Truck size={16} />
+                      <span>Ciudad detectada: <strong className="capitalize">{ciudadEnvio}</strong></span>
+                    </div>
+                    <div className="flex items-center justify-between text-sky-700 mt-1">
+                      <span className="text-xs">Costo de envío estimado:</span>
+                      {envioGratis ? (
+                        <span className="font-bold text-green-600 bg-green-100 px-3 py-0.5 rounded-full text-xs">
+                          🚚 Envío gratis por compras {'>'} $50.000
+                        </span>
+                      ) : (
+                        <span className="font-bold">${costoEnvioFinal.toLocaleString()} COP</span>
+                      )}
+                    </div>
+                    {ciudadEnvio === 'otra' && (
+                      <p className="text-[11px] text-sky-600/70 mt-1">
+                        No pudimos detectar tu ciudad automáticamente. Incluye el nombre de tu ciudad en la dirección (ej: "Cra 1 #2-3, Pereira").
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="label">Nombre completo <span className="text-red-500">*</span></label>

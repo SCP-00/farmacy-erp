@@ -92,6 +92,8 @@ export const useAuthClienteStore = create<ClienteState>()(
         set({ token: null, cliente: null })
         useCarritoStore.getState().limpiar()
         setClienteIdCarrito(null)
+        // Limpiar datos de checkout persistentes para evitar mezcla entre usuarios
+        try { localStorage.removeItem('checkout_datos_envio') } catch { /* ignore */ }
         window.location.href = '/login'
       },
 

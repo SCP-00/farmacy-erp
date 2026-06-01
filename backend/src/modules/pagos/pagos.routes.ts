@@ -12,9 +12,10 @@ import { Router, Request, Response, raw } from 'express'
 import Stripe from 'stripe'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import crypto from 'crypto'
+import { z } from 'zod'
 import { prisma } from '../../config/database'
 import { responder } from '../../utils/respuesta.utils'
-import { autenticar, autenticarCliente, limitarWebhook, verificarIpPermitida } from '../../middlewares/index'
+import { autenticar, autenticarCliente, autorizar, limitarWebhook, verificarIpPermitida } from '../../middlewares/index'
 import { env } from '../../config/env'
 import { logger } from '../../utils/logger'
 
@@ -85,32 +86,71 @@ const mpClient = env.MERCADOPAGO_ACCESS_TOKEN
 
 // ── WOMPI ─────────────────────────────────────────────────
 pagosRouter.post('/wompi/crear', autenticarCliente, async (req: Request, res: Response) => {
-  const { pedidoId, monto, moneda = 'COP' } = req.body
+  const { pedidoId, ventaId, monto, moneda = 'COP' } = req.body
 
   if (!env.WOMPI_PRIVATE_KEY) {
     return responder.error(res, 'Wompi no configurado en este ambiente', 503)
   }
 
   try {
-    const pedido = await prisma.pedidoOnline.findUnique({ where: { id: pedidoId } })
-    if (!pedido) return responder.noEncontrado(res, 'Pedido')
+    // Soporta tanto pedidoOnline como venta directa
+    let referenciaId: string, numero: number, total: number, email: string
 
-    const referencia       = `FARMACY-${pedido.numero}-${Date.now()}`
-    const montoEnCentavos  = Math.round(monto * 100)
-    // La firma se genera con la llave de integridad (integrity_key) de Wompi
+    if (ventaId) {
+      const venta = await prisma.venta.findUnique({
+        where: { id: ventaId },
+        include: { cliente: { select: { email: true } } },
+      })
+      if (!venta) return responder.noEncontrado(res, 'Venta')
+      referenciaId = ventaId
+      numero = venta.numero
+      total = Number(venta.total)
+      email = venta.cliente?.email || req.cliente!.email
+    } else if (pedidoId) {
+      const pedido = await prisma.pedidoOnline.findUnique({
+        where: { id: pedidoId },
+        include: { cliente: { select: { email: true } } },
+      })
+      if (!pedido) return responder.noEncontrado(res, 'Pedido')
+      referenciaId = pedidoId
+      numero = pedido.numero
+      total = Number(pedido.total)
+      email = pedido.cliente.email
+    } else {
+      return responder.error(res, 'ventaId o pedidoId requerido', 400)
+    }
+
+    const referencia       = `FARMACY-${numero}-${Date.now()}`
+    const montoEnCentavos  = Math.round((monto || total) * 100)
+    // La firma se genera HMAC-SHA256(reference + amountInCents + currency, integrity_key)
+    // Según documentación de Wompi: el payload del HMAC es solo reference + amount + currency
     const integrityKey     = env.WOMPI_INTEGRITY_SECRET || ''
     const firma            = integrityKey
       ? crypto
           .createHmac('sha256', integrityKey)
-          .update(`${referencia}${montoEnCentavos}${moneda}${integrityKey}`)
+          .update(`${referencia}${montoEnCentavos}${moneda}`)
           .digest('hex')
       : undefined
 
-    await prisma.pagoTransaccion.upsert({
-      where:  { pedidoOnlineId: pedidoId },
-      update: { referenciaExterna: referencia, estado: 'PENDIENTE' },
-      create: { pedidoOnlineId: pedidoId, pasarela: 'WOMPI', referenciaExterna: referencia, monto: pedido.total, moneda, estado: 'PENDIENTE' },
-    })
+    // Crear o actualizar PagoTransaccion
+    if (ventaId) {
+      await prisma.pagoTransaccion.create({
+        data: {
+          ventaId,
+          pasarela: 'WOMPI',
+          referenciaExterna: referencia,
+          monto: total,
+          moneda,
+          estado: 'PENDIENTE',
+        },
+      })
+    } else if (pedidoId) {
+      await prisma.pagoTransaccion.upsert({
+        where:  { pedidoOnlineId: pedidoId },
+        update: { referenciaExterna: referencia, estado: 'PENDIENTE' },
+        create: { pedidoOnlineId: pedidoId, pasarela: 'WOMPI', referenciaExterna: referencia, monto: total, moneda, estado: 'PENDIENTE' },
+      })
+    }
 
     return responder.ok(res, {
       publicKey:     env.WOMPI_PUBLIC_KEY,
@@ -118,8 +158,8 @@ pagosRouter.post('/wompi/crear', autenticarCliente, async (req: Request, res: Re
       amountInCents: montoEnCentavos,
       reference:     referencia,
       signature:     firma,
-      redirectUrl:   `${env.FRONTEND_URL}/pago/confirmacion?pedido=${pedidoId}`,
-      customerEmail: req.cliente!.email,
+      redirectUrl:   `${env.FRONTEND_URL}/pago/confirmacion?ref=${referenciaId}`,
+      customerEmail: email,
     }, 'Transacción Wompi iniciada')
 
   } catch (err) { return responder.serverError(res, err) }
@@ -178,6 +218,9 @@ pagosRouter.post('/wompi/webhook', verificarIpWebhook, limitarWebhook, async (re
       if (pago?.pedidoOnlineId) {
         await prisma.pedidoOnline.update({ where: { id: pago.pedidoOnlineId }, data: { estado: 'PAGO_CONFIRMADO' } })
       }
+      if (pago?.ventaId) {
+        await prisma.venta.update({ where: { id: pago.ventaId }, data: { estado: 'PAGADO' } })
+      }
     }
 
     // Actualizar cache de idempotencia
@@ -191,25 +234,68 @@ pagosRouter.post('/wompi/webhook', verificarIpWebhook, limitarWebhook, async (re
 // ── STRIPE ────────────────────────────────────────────────
 pagosRouter.post('/stripe/crear-intent', autenticarCliente, async (req: Request, res: Response) => {
   if (!stripe) return responder.error(res, 'Stripe no configurado', 503)
-  const { pedidoId } = req.body
+  const { pedidoId, ventaId } = req.body
 
   try {
-    const pedido = await prisma.pedidoOnline.findUnique({ where: { id: pedidoId } })
-    if (!pedido) return responder.noEncontrado(res, 'Pedido')
+    // Soporta tanto pedidoOnline como venta directa
+    let referenciaId: string, total: number, numero: number, clienteEmail: string | undefined
 
-    const pi = await stripe.paymentIntents.create({
-      amount:   Math.round(Number(pedido.total) * 100),
-      currency: 'cop',
-      metadata: { pedidoId, numeroPedido: String(pedido.numero) },
+    if (ventaId) {
+      const venta = await prisma.venta.findUnique({ where: { id: ventaId }, include: { cliente: { select: { email: true } } } })
+      if (!venta) return responder.noEncontrado(res, 'Venta')
+      referenciaId = ventaId
+      total = Number(venta.total)
+      numero = venta.numero
+      clienteEmail = venta.cliente?.email || req.cliente!.email
+    } else if (pedidoId) {
+      const pedido = await prisma.pedidoOnline.findUnique({ where: { id: pedidoId }, include: { cliente: { select: { email: true } } } })
+      if (!pedido) return responder.noEncontrado(res, 'Pedido')
+      referenciaId = pedidoId
+      total = Number(pedido.total)
+      numero = pedido.numero
+      clienteEmail = pedido.cliente.email
+    } else {
+      return responder.error(res, 'ventaId o pedidoId requerido', 400)
+    }
+
+    // Usar Stripe Checkout Session para redirect flow (no PaymentIntent)
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      line_items: [{
+        price_data: {
+          currency: 'cop',
+          product_data: { name: `Pedido #F-${String(numero).padStart(5, '0')}` },
+          unit_amount: Math.round(total * 100),
+        },
+        quantity: 1,
+      }],
+      customer_email: clienteEmail,
+      metadata: { ventaId: referenciaId, pedidoId: referenciaId, numeroPedido: String(numero) },
+      success_url: `${env.FRONTEND_URL}/pago/confirmacion?ref=${referenciaId}&estado=aprobado`,
+      cancel_url: `${env.FRONTEND_URL}/checkout?cancelado=true`,
     })
 
-    await prisma.pagoTransaccion.upsert({
-      where:  { pedidoOnlineId: pedidoId },
-      update: { referenciaExterna: pi.id, estado: 'PENDIENTE' },
-      create: { pedidoOnlineId: pedidoId, pasarela: 'STRIPE', referenciaExterna: pi.id, monto: pedido.total, moneda: 'COP', estado: 'PENDIENTE' },
-    })
+    // Crear PagoTransaccion
+    if (ventaId) {
+      await prisma.pagoTransaccion.create({
+        data: {
+          ventaId,
+          pasarela: 'STRIPE',
+          referenciaExterna: session.id,
+          monto: total,
+          moneda: 'COP',
+          estado: 'PENDIENTE',
+        },
+      })
+    } else if (pedidoId) {
+      await prisma.pagoTransaccion.upsert({
+        where:  { pedidoOnlineId: pedidoId },
+        update: { referenciaExterna: session.id, estado: 'PENDIENTE' },
+        create: { pedidoOnlineId: pedidoId, pasarela: 'STRIPE', referenciaExterna: session.id, monto: total, moneda: 'COP', estado: 'PENDIENTE' },
+      })
+    }
 
-    return responder.ok(res, { clientSecret: pi.client_secret })
+    return responder.ok(res, { sessionUrl: session.url, clientSecret: undefined })
   } catch (err) { return responder.serverError(res, err) }
 })
 
@@ -235,6 +321,10 @@ pagosRouter.post('/stripe/webhook', verificarIpWebhook, limitarWebhook, async (r
     if (evento.type === 'payment_intent.succeeded') {
       const pi = evento.data.object as Stripe.PaymentIntent
       await prisma.pagoTransaccion.updateMany({ where: { referenciaExterna: pi.id }, data: { estado: 'APROBADO', respuestaPasarela: pi as any } })
+      const pagoActualizado = await prisma.pagoTransaccion.findFirst({ where: { referenciaExterna: pi.id } })
+      if (pagoActualizado?.ventaId) {
+        await prisma.venta.update({ where: { id: pagoActualizado.ventaId }, data: { estado: 'PAGADO' } })
+      }
       if (pi.metadata?.pedidoId) {
         await prisma.pedidoOnline.update({ where: { id: pi.metadata.pedidoId }, data: { estado: 'PAGO_CONFIRMADO' } })
       }
@@ -286,7 +376,18 @@ pagosRouter.post('/mercadopago/crear', autenticarCliente, async (req: Request, r
     })
 
     // Guardar transacción si tenemos pedidoId o ventaId
-    if (pedidoId) {
+    if (ventaId) {
+      await prisma.pagoTransaccion.create({
+        data: {
+          ventaId,
+          pasarela: 'MERCADOPAGO',
+          referenciaExterna: response.id!,
+          monto: total,
+          moneda: 'COP',
+          estado: 'PENDIENTE',
+        },
+      })
+    } else if (pedidoId) {
       await prisma.pagoTransaccion.upsert({
         where:  { pedidoOnlineId: pedidoId },
         update: { referenciaExterna: response.id!, estado: 'PENDIENTE' },
@@ -343,6 +444,15 @@ pagosRouter.post('/mercadopago/webhook', verificarIpWebhook, limitarWebhook, asy
         }
       }
 
+      // También actualizar Venta si existe (flujo B2C directo)
+      await prisma.pagoTransaccion.updateMany({ where: { referenciaExterna: pago.external_reference }, data: { estado: estadoPago } })
+      if (estadoPago === 'APROBADO') {
+        const pagoTx = await prisma.pagoTransaccion.findFirst({ where: { referenciaExterna: pago.external_reference } })
+        if (pagoTx?.ventaId) {
+          await prisma.venta.update({ where: { id: pagoTx.ventaId }, data: { estado: 'PAGADO' } })
+        }
+      }
+
       // Marcar como procesado
       if (requestId) idempotenciaCache.set(requestId, { estado: estadoPago, timestamp: Date.now() })
       idempotenciaCache.set(`mp-${paymentId}`, { estado: estadoPago, timestamp: Date.now() })
@@ -354,23 +464,105 @@ pagosRouter.post('/mercadopago/webhook', verificarIpWebhook, limitarWebhook, asy
 })
 
 // ── EFECTIVO (POS) ────────────────────────────────────────
-pagosRouter.post('/efectivo/registrar', autenticar, async (req: Request, res: Response) => {
-  const { ventaId, monto } = req.body
+// Schema de validación para registro de pago en efectivo
+const efectivoRegistroSchema = z.object({
+  ventaId: z.string().uuid('ID de venta inválido'),
+  monto: z.number().positive('El monto debe ser positivo').optional(),
+})
+
+pagosRouter.post('/efectivo/registrar', autenticar, autorizar('ADMINISTRADOR','FARMACEUTA'), async (req: Request, res: Response) => {
+  // Validar body con Zod
+  const parsed = efectivoRegistroSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return responder.error(res, 'Datos inválidos: ' + parsed.error.errors.map(e => e.message).join(', '), 400)
+  }
+
+  const { ventaId, monto } = parsed.data
+
   try {
+    // 1. Verificar que la venta existe y está pendiente
     const venta = await prisma.venta.findUnique({ where: { id: ventaId } })
     if (!venta) return responder.noEncontrado(res, 'Venta')
 
-    await prisma.pagoTransaccion.create({
+    if (venta.estado === 'PAGADO') {
+      return responder.error(res, 'Esta venta ya fue pagada', 409)
+    }
+
+    // 2. Verificar que el empleado tiene una caja abierta
+    const cajaAbierta = await prisma.caja.findFirst({
+      where: { empleadoId: req.empleado!.id, cerradaEn: null },
+    })
+    if (!cajaAbierta) {
+      return responder.error(res, 'No tienes una caja abierta. Abre la caja antes de registrar pagos.', 400)
+    }
+
+    // 3. Validar que el monto recibido coincide con el total de la venta
+    const montoRecibido = monto ?? Number(venta.total)
+    const totalVenta = Number(venta.total)
+    if (montoRecibido < totalVenta) {
+      return responder.error(res, `El monto recibido ($${montoRecibido.toLocaleString()}) es menor al total de la venta ($${totalVenta.toLocaleString()})`, 400)
+    }
+
+    const cambio = montoRecibido - totalVenta
+
+    // 4. Actualizar la transacción existente (PENDIENTE) a APROBADO,
+    //    o crear una nueva si no existe (ej: ventas POS directas)
+    const txExistente = await prisma.pagoTransaccion.findFirst({
+      where: { ventaId, pasarela: 'EFECTIVO' },
+      orderBy: { creadoEn: 'desc' },
+    })
+
+    if (txExistente) {
+      await prisma.pagoTransaccion.update({
+        where: { id: txExistente.id },
+        data: {
+          estado: 'APROBADO',
+          respuestaPasarela: {
+            metodo: 'EFECTIVO',
+            montoRecibido,
+            cambio,
+            registradoPor: req.empleado!.id,
+            cajaId: cajaAbierta.id,
+          },
+        },
+      })
+    } else {
+      await prisma.pagoTransaccion.create({
+        data: {
+          ventaId,
+          pasarela: 'EFECTIVO',
+          referenciaExterna: `CASH-${ventaId}-${Date.now()}`,
+          monto: totalVenta,
+          moneda: 'COP',
+          estado: 'APROBADO',
+          respuestaPasarela: {
+            metodo: 'EFECTIVO',
+            montoRecibido,
+            cambio,
+            registradoPor: req.empleado!.id,
+            cajaId: cajaAbierta.id,
+          },
+        },
+      })
+    }
+
+    // 5. Actualizar la venta a PAGADO y asociar la caja
+    await prisma.venta.update({
+      where: { id: ventaId },
       data: {
-        ventaId,
-        pasarela:          'EFECTIVO',
-        referenciaExterna: `CASH-${ventaId}-${Date.now()}`,
-        monto:             venta.total,
-        moneda:            'COP',
-        estado:            'APROBADO',
-        respuestaPasarela: { metodo: 'EFECTIVO', montoRecibido: monto },
+        estado: 'PAGADO',
+        cajaId: cajaAbierta.id,
       },
     })
-    return responder.creado(res, null, 'Pago en efectivo registrado')
+
+    logger.info(`[EFECTIVO] Venta #${venta.numero} — Total: $${totalVenta.toLocaleString()} — Recibido: $${montoRecibido.toLocaleString()} — Cambio: $${cambio.toLocaleString()} — Caja: ${cajaAbierta.id}`)
+
+    return responder.creado(res, {
+      ventaId,
+      monto: totalVenta,
+      montoRecibido,
+      cambio,
+      cajaId: cajaAbierta.id,
+    }, 'Pago en efectivo registrado exitosamente')
   } catch (err) { return responder.serverError(res, err) }
 })

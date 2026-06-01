@@ -2,7 +2,7 @@ import axios from 'axios'
 import { useAuthStore }        from '@/store/authStore'
 import { useAuthClienteStore } from '@/store/authStore'
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? '/api/v1'
+const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
 /**
  * Cliente axios autenticado para empleados (admin/farmaceuta/auxiliar).

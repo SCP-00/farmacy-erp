@@ -33,7 +33,9 @@ const registroSchema = z.object({
     .string()
     .min(8, 'Mínimo 8 caracteres')
     .regex(/[0-9]/, 'Debe contener al menos un número')
-    .regex(/[!@#$%^&*]/, 'Debe contener al menos un carácter especial'),
+    .regex(/[!@#$%^&*_\-+=]/, 'Debe contener al menos un carácter especial'),
+  tipoDoc: z.string().optional(),
+  documento: z.string().optional(),
   autorizacionDatos: z.boolean().refine(v => v === true, {
     message: 'Debes aceptar el tratamiento de datos personales (Ley 1581)',
   }),
@@ -53,7 +55,7 @@ authClienteRouter.post(
   limitarRegistro,
   validarCuerpo(registroSchema),
   async (req: Request, res: Response) => {
-    const { nombre, apellido, email, password, autorizacionDatos } = req.body
+    const { nombre, apellido, email, password, tipoDoc, documento, autorizacionDatos } = req.body
 
     try {
       const existe = await prisma.cliente.findUnique({ where: { email } })
@@ -66,6 +68,8 @@ authClienteRouter.post(
         data: {
           nombre, apellido, email,
           password: hash,
+          tipoDoc: tipoDoc || undefined,
+          documento: documento || undefined,
           autorizacionDatos,
           tokenVerificacion: token,
         },
@@ -232,9 +236,9 @@ authClienteRouter.post('/reset-password', limitarCreacion, async (req: Request, 
 authClienteRouter.get('/me', autenticarCliente, async (req: Request, res: Response) => {
   try {
     const cliente = await prisma.cliente.findUnique({
-      where: { id: req.cliente!.id },
-      select: {
+      where: { id: req.cliente!.id },        select: {
         id: true, nombre: true, apellido: true, email: true,
+        tipoDoc: true, documento: true,
         telefono: true, ciudad: true, puntosAcumulados: true,
         puntosExpiranEn: true, creadoEn: true,
       },
@@ -246,11 +250,43 @@ authClienteRouter.get('/me', autenticarCliente, async (req: Request, res: Respon
   }
 })
 
+// ── PATCH /me — Actualizar perfil del cliente autenticado
+authClienteRouter.patch('/me', autenticarCliente, limitarCreacion, async (req: Request, res: Response) => {
+  const schema = z.object({
+    nombre: z.string().min(2).optional(),
+    apellido: z.string().min(2).optional(),
+    telefono: z.string().optional().transform(v => v || undefined),
+    ciudad: z.string().optional().transform(v => v || undefined),
+    tipoDoc: z.string().optional().transform(v => v || undefined),
+    documento: z.string().optional().transform(v => v || undefined),
+  })
+  const parsed = schema.safeParse(req.body)
+  if (!parsed.success) {
+    return responder.error(res, 'Datos inválidos: ' + parsed.error.errors.map(e => e.message).join(', '), 400)
+  }
+
+  try {
+    const cliente = await prisma.cliente.update({
+      where: { id: req.cliente!.id },
+      data: parsed.data,
+      select: {
+        id: true, nombre: true, apellido: true, email: true,
+        tipoDoc: true, documento: true,
+        telefono: true, ciudad: true, puntosAcumulados: true,
+      },
+    })
+    logger.info(`[AuthCliente] Perfil actualizado: ${cliente.email}`)
+    return responder.ok(res, cliente, 'Perfil actualizado exitosamente')
+  } catch (err) {
+    return responder.serverError(res, err)
+  }
+})
+
 // ── POST /comprar — Cliente autenticado realiza una compra B2C
 // Crea una venta con estado PENDIENTE, registra los items del carrito,
 // y descuenta stock de lotes siguiendo FEFO (First Expiry, First Out).
 authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (req: Request, res: Response) => {
-  const { metodoPago, items, descuento = 0, direccionEnvio, ciudad } = req.body
+  const { metodoPago, items, descuento = 0, puntosUsados = 0, direccionEnvio, ciudad } = req.body
   const clienteId = req.cliente!.id
 
   if (!items?.length) return responder.error(res, 'El carrito está vacío', 400)
@@ -299,7 +335,8 @@ authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (re
       const envioGratis = subtotal >= 50000
       const costoEnvioFinal = envioGratis ? 0 : costoEnvio
 
-      const total = Math.max(0, subtotal - descuento + costoEnvioFinal)
+      const puntosDescontados = Number(puntosUsados) || 0
+      const total = Math.max(0, subtotal - descuento + costoEnvioFinal - puntosDescontados)
 
       // 4. Generar número de venta
       // 4. Obtener empleado administrador por defecto para B2C
@@ -321,9 +358,11 @@ authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (re
           clienteId,
           metodoPago,
           subtotal,
-          descuento,
+          descuento: descuento + puntosDescontados,
+          iva: 0,
+          costoEnvio: costoEnvioFinal,
           total,
-          estado: metodoPago === 'EFECTIVO' ? 'COMPLETADA' : 'PENDIENTE',
+          estado: metodoPago === 'EFECTIVO' ? 'PENDIENTE' : 'PENDIENTE',
           detalles: {
             create: items.map((item: any) => ({
               productoId: item.productoId,
@@ -360,14 +399,32 @@ authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (re
         }
       }
 
-      // 7. Acumular puntos de fidelidad
-      const puntosGanados = Math.floor(total / 100)
-      await tx.cliente.update({
-        where: { id: clienteId },
-        data: { puntosAcumulados: { increment: puntosGanados } },
-      })
+      // 7. Puntos de fidelidad — restar usados, sumar ganados
+      // Los puntos se calculan SOLO sobre el valor de productos (excluye envío)
+      const basePuntos = Math.max(0, subtotal - descuento)
+      const puntosGanados = Math.floor(basePuntos / 100)
 
-      // 8. Si es efectivo, registrar pago automáticamente
+      if (puntosDescontados > 0) {
+        await tx.cliente.update({
+          where: { id: clienteId },
+          data: { puntosAcumulados: { decrement: puntosDescontados } },
+        })
+      }
+
+      if (puntosGanados > 0) {
+        const expira = new Date()
+        expira.setFullYear(expira.getFullYear() + 1)
+        await tx.cliente.update({
+          where: { id: clienteId },
+          data: {
+            puntosAcumulados: { increment: puntosGanados },
+            puntosExpiranEn: expira,
+          },
+        })
+      }
+
+      // 8. Si es efectivo, registrar pago como PENDIENTE (contra entrega)
+      // El pago se confirma cuando el admin registra el cobro en el POS
       if (metodoPago === 'EFECTIVO') {
         await tx.pagoTransaccion.create({
           data: {
@@ -375,7 +432,7 @@ authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (re
             pasarela: 'EFECTIVO',
             monto: total,
             moneda: 'COP',
-            estado: 'APROBADO',
+            estado: 'PENDIENTE',
             referenciaExterna: `EF-${nuevoNumero}`,
           },
         })
@@ -387,6 +444,7 @@ authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (re
         total,
         subtotal,
         descuento,
+        puntosUsados: puntosDescontados,
         costoEnvio: costoEnvioFinal,
         puntosGanados,
         estado: venta.estado,
@@ -406,12 +464,32 @@ authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (re
 })
 
 // ── GET /pedidos — Historial de pedidos del cliente autenticado
+// Incluye costoEnvio, subtotal, descuento y total para desglose completo
 authClienteRouter.get('/pedidos', autenticarCliente, async (req: Request, res: Response) => {
   try {
     const pedidos = await prisma.venta.findMany({
       where: { clienteId: req.cliente!.id },
       orderBy: { creadoEn: 'desc' },
-      include: { detalles: { include: { producto: { select: { nombre: true } } } } }
+      select: {
+        id: true,
+        numero: true,
+        metodoPago: true,
+        subtotal: true,
+        descuento: true,
+        iva: true,
+        costoEnvio: true,
+        total: true,
+        estado: true,
+        creadoEn: true,
+        detalles: {
+          include: {
+            producto: { select: { nombre: true } },
+          },
+        },
+        pagos: {
+          select: { pasarela: true, estado: true, monto: true },
+        },
+      },
     })
     return responder.ok(res, pedidos)
   } catch (err) { return responder.serverError(res, err) }

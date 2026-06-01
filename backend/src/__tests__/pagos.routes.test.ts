@@ -37,8 +37,9 @@ const mockPrisma = vi.hoisted(() => ({
   cliente: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn() },
   empleado: { findUnique: vi.fn() },
   pedidoOnline: { findUnique: vi.fn(), update: vi.fn() },
-  pagoTransaccion: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
-  venta: { findUnique: vi.fn() },
+  pagoTransaccion: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), upsert: vi.fn(), updateMany: vi.fn() },
+  venta: { findUnique: vi.fn(), update: vi.fn() },
+  caja: { findFirst: vi.fn() },
   logActividad: { create: vi.fn().mockResolvedValue({}) },
   chatbotSesion: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn().mockResolvedValue({}) },
 }))
@@ -315,13 +316,24 @@ describe('POST /pagos/efectivo/registrar', () => {
     expect(res.body.error).toContain('Venta')
   })
 
-  it('registra pago en efectivo exitosamente', async () => {
+  it('registra pago en efectivo exitosamente — actualiza PagoTransaccion existente', async () => {
+    // Venta pendiente
     mockPrisma.venta.findUnique.mockResolvedValue({
       id: '11111111-1111-4111-1111-111111111111',
+      numero: 42,
       total: 50000,
-      estado: 'PAGADO',
+      estado: 'PENDIENTE',
     })
-    mockPrisma.pagoTransaccion.create.mockResolvedValue({ id: 'pago-cash-1' })
+    // Caja abierta del empleado
+    mockPrisma.caja.findFirst.mockResolvedValue({
+      id: 'caja-001',
+      empleadoId: 'emp-1',
+      cerradaEn: null,
+    })
+    // Transacción EFECTIVO existente (creada por /comprar)
+    mockPrisma.pagoTransaccion.findFirst.mockResolvedValue({ id: 'tx-cash-1', estado: 'PENDIENTE' })
+    mockPrisma.pagoTransaccion.update.mockResolvedValue({ id: 'tx-cash-1', estado: 'APROBADO' })
+    mockPrisma.venta.update.mockResolvedValue({ id: '11111111-1111-4111-1111-111111111111', estado: 'PAGADO' })
 
     const res = await supertest(app).post(`${apiPrefix}/pagos/efectivo/registrar`)
       .set('Authorization', 'Bearer valid-admin-token')
@@ -329,15 +341,119 @@ describe('POST /pagos/efectivo/registrar', () => {
 
     expect(res.status).toBe(201)
     expect(res.body.ok).toBe(true)
-    expect(mockPrisma.pagoTransaccion.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        ventaId: '11111111-1111-4111-1111-111111111111',
-        pasarela: 'EFECTIVO',
-        monto: 50000,
-        moneda: 'COP',
-        estado: 'APROBADO',
-      }),
+    // Actualiza la transacción existente (no crea una nueva)
+    expect(mockPrisma.pagoTransaccion.update).toHaveBeenCalledWith({
+      where: { id: 'tx-cash-1' },
+      data: expect.objectContaining({ estado: 'APROBADO' }),
     })
+    expect(mockPrisma.pagoTransaccion.create).not.toHaveBeenCalled()
+    // Actualiza la venta a PAGADO
+    expect(mockPrisma.venta.update).toHaveBeenCalledWith({
+      where: { id: '11111111-1111-4111-1111-111111111111' },
+      data: expect.objectContaining({ estado: 'PAGADO' }),
+    })
+    // Respuesta incluye monto, cambio, cajaId
+    expect(res.body.data).toMatchObject({
+      monto: 50000,
+      montoRecibido: 50000,
+      cambio: 0,
+      cajaId: 'caja-001',
+    })
+  })
+
+  it('registra pago en efectivo — con cambio (monto mayor al total)', async () => {
+    mockPrisma.venta.findUnique.mockResolvedValue({
+      id: '22222222-2222-4222-2222-222222222222',
+      numero: 43,
+      total: 35000,
+      estado: 'PENDIENTE',
+    })
+    mockPrisma.caja.findFirst.mockResolvedValue({
+      id: 'caja-001',
+      empleadoId: 'emp-1',
+      cerradaEn: null,
+    })
+    // Sin transacción existente → debe crear una nueva
+    mockPrisma.pagoTransaccion.findFirst.mockResolvedValue(null)
+    mockPrisma.pagoTransaccion.create.mockResolvedValue({ id: 'tx-cash-2', estado: 'APROBADO' })
+    mockPrisma.venta.update.mockResolvedValue({ id: '22222222-2222-4222-2222-222222222222', estado: 'PAGADO' })
+
+    const res = await supertest(app).post(`${apiPrefix}/pagos/efectivo/registrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ ventaId: '22222222-2222-4222-2222-222222222222', monto: 50000 })
+
+    expect(res.status).toBe(201)
+    expect(res.body.ok).toBe(true)
+    // Crea nueva transacción (no había existente)
+    expect(mockPrisma.pagoTransaccion.create).toHaveBeenCalled()
+    expect(mockPrisma.pagoTransaccion.update).not.toHaveBeenCalled()
+    // Cambio = 50000 - 35000 = 15000
+    expect(res.body.data).toMatchObject({
+      monto: 35000,
+      montoRecibido: 50000,
+      cambio: 15000,
+      cajaId: 'caja-001',
+    })
+  })
+
+  it('rechaza si la venta ya fue pagada', async () => {
+    mockPrisma.venta.findUnique.mockResolvedValue({
+      id: '33333333-3333-4333-3333-333333333333',
+      total: 50000,
+      estado: 'PAGADO',
+    })
+
+    const res = await supertest(app).post(`${apiPrefix}/pagos/efectivo/registrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ ventaId: '33333333-3333-4333-3333-333333333333', monto: 50000 })
+
+    expect(res.status).toBe(409)
+    expect(res.body.error).toContain('ya fue pagada')
+  })
+
+  it('rechaza si el monto es menor al total', async () => {
+    mockPrisma.venta.findUnique.mockResolvedValue({
+      id: '44444444-4444-4444-4444-444444444444',
+      total: 50000,
+      estado: 'PENDIENTE',
+    })
+    mockPrisma.caja.findFirst.mockResolvedValue({
+      id: 'caja-001',
+      empleadoId: 'emp-1',
+      cerradaEn: null,
+    })
+
+    const res = await supertest(app).post(`${apiPrefix}/pagos/efectivo/registrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ ventaId: '44444444-4444-4444-4444-444444444444', monto: 30000 })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toContain('menor al total')
+  })
+
+  it('rechaza si no hay caja abierta', async () => {
+    mockPrisma.venta.findUnique.mockResolvedValue({
+      id: '55555555-5555-5555-5555-555555555555',
+      total: 50000,
+      estado: 'PENDIENTE',
+    })
+    // Sin caja abierta
+    mockPrisma.caja.findFirst.mockResolvedValue(null)
+
+    const res = await supertest(app).post(`${apiPrefix}/pagos/efectivo/registrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ ventaId: '55555555-5555-5555-5555-555555555555', monto: 50000 })
+
+    expect(res.status).toBe(400)
+    expect(res.body.error).toContain('caja abierta')
+  })
+
+  it('rechaza montos negativos o cero', async () => {
+    const res = await supertest(app).post(`${apiPrefix}/pagos/efectivo/registrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ ventaId: '66666666-6666-4666-6666-666666666666', monto: -100 })
+
+    expect(res.status).toBe(400)
   })
 
   it('maneja error interno', async () => {

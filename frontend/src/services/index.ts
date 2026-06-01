@@ -25,7 +25,8 @@ export const authService = {
 export const authClienteService = {
   registro: (data: {
     nombre: string; apellido: string; email: string
-    password: string; autorizacionDatos: boolean
+    password: string; tipoDoc?: string; documento?: string
+    autorizacionDatos: boolean
   }) => apiPublica.post('/clientes/auth/registro', data).then(r => r.data),
 
   login: (email: string, password: string) =>
@@ -45,7 +46,7 @@ export const authClienteService = {
   resetPassword: (token: string, password: string) =>
     apiPublica.post('/clientes/auth/reset-password', { token, password }).then(r => r.data),
 
-  googleUrl: () => `${import.meta.env.VITE_API_URL ?? '/api/v1'}/clientes/auth/google`,
+  googleUrl: () => `${import.meta.env.VITE_API_URL || '/api/v1'}/clientes/auth/google`,
 
   // Para OAuth callback — pasar token manualmente porque aún no está en el store
   meConToken: async (token: string) => {
@@ -213,6 +214,7 @@ export const clientesService = {
     metodoPago: string;
     items: { productoId: string; cantidad: number; precioUnitario: number }[];
     descuento?: number;
+    puntosUsados?: number;
     direccionEnvio?: string;
     ciudad?: string;
   }) =>
@@ -314,11 +316,11 @@ export const pushService = {
 
 /** Pasarelas de pago. Wompi, Stripe, MercadoPago, efectivo. */
 export const pagosService = {
-  crearWompi: (pedidoId: string, monto: number) =>
-    apiCliente.post('/pagos/wompi/crear', { pedidoId, monto }).then(r => r.data.data),
+  crearWompi: (ventaId: string, monto: number) =>
+    apiCliente.post('/pagos/wompi/crear', { ventaId, monto }).then(r => r.data.data),
 
-  crearStripeIntent: (pedidoId: string) =>
-    apiCliente.post('/pagos/stripe/crear-intent', { pedidoId }).then(r => r.data.data),
+  crearStripeIntent: (ventaId: string) =>
+    apiCliente.post('/pagos/stripe/crear-intent', { ventaId }).then(r => r.data.data),
 
   crearMercadoPago: (data: { pedidoId?: string; ventaId?: string; items: unknown[]; monto?: number; clienteEmail?: string }) =>
     apiCliente.post('/pagos/mercadopago/crear', data).then(r => r.data.data),

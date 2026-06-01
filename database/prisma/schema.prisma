@@ -298,6 +298,7 @@ model Venta {
   subtotal   Decimal      @db.Decimal(12, 2)
   descuento  Decimal      @default(0) @db.Decimal(12, 2)
   iva        Decimal      @default(0) @db.Decimal(12, 2)
+  costoEnvio Decimal      @default(0) @map("costo_envio") @db.Decimal(12, 2)
   total      Decimal      @db.Decimal(12, 2)
   estado     String       @default("PAGADO") @db.VarChar(20)
   creadoEn   DateTime     @default(now()) @map("creado_en")

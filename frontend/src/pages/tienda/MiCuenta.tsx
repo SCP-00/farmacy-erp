@@ -22,7 +22,21 @@ export default function MiCuenta() {
   const [tabActiva, setTabActiva] = useState<TabPerfil>('datos')
 
   // ── Formulario datos básicos ──────────────────────────
-  const [form, setForm] = useState({ nombre: '', apellido: '', telefono: '', ciudad: '' })
+  const [form, setForm] = useState({ nombre: '', apellido: '', tipoDoc: '', documento: '', telefono: '', ciudad: '' })
+
+  // Poblar el formulario cuando se cargan los datos del cliente
+  useEffect(() => {
+    if (cliente) {
+      setForm({
+        nombre: cliente.nombre ?? '',
+        apellido: cliente.apellido ?? '',
+        tipoDoc: cliente.tipoDoc ?? 'CC',
+        documento: cliente.documento ?? '',
+        telefono: cliente.telefono ?? '',
+        ciudad: cliente.ciudad ?? '',
+      })
+    }
+  }, [cliente])
 
   const mutationPerfil = useMutation({
     mutationFn: (payload: any) => authClienteService.actualizarMe(payload),
@@ -145,6 +159,33 @@ export default function MiCuenta() {
                 />
               </div>
             </div>
+
+            {/* Documento de identidad */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Tipo doc.</label>
+                <select
+                  className="input-base"
+                  defaultValue={cliente?.tipoDoc ?? 'CC'}
+                  onChange={e => setForm(s => ({ ...s, tipoDoc: e.target.value }))}
+                >
+                  <option value="CC">CC</option>
+                  <option value="CE">CE</option>
+                  <option value="NIT">NIT</option>
+                  <option value="PEP">PEP</option>
+                  <option value="PPT">PPT</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Número de documento</label>
+                <input
+                  className="input-base"
+                  defaultValue={cliente?.documento ?? ''}
+                  onChange={e => setForm(s => ({ ...s, documento: e.target.value }))}
+                  placeholder="1.234.567.890"
+                />
+              </div>
+            </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1.5">Email</label>
               <input
@@ -190,6 +231,8 @@ export default function MiCuenta() {
                   setForm({
                     nombre: cliente?.nombre ?? '',
                     apellido: cliente?.apellido ?? '',
+                    tipoDoc: cliente?.tipoDoc ?? 'CC',
+                    documento: cliente?.documento ?? '',
                     telefono: cliente?.telefono ?? '',
                     ciudad: cliente?.ciudad ?? '',
                   })

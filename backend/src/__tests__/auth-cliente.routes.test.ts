@@ -159,6 +159,65 @@ describe('Auth Cliente - POST /clientes/auth/registro', () => {
     expect(mockPrisma.cliente.create).toHaveBeenCalled()
   })
 
+  // ── Tests de caracteres especiales en contraseña ─────────
+  // El regex actual: /[!@#$%^&*_\-+=]/
+  // Verifica que los nuevos caracteres agregados funcionan
+
+  it('acepta password con guión bajo (_)', async () => {
+    mockPrisma.cliente.findUnique.mockResolvedValue(null)
+    mockBcrypt.hash.mockResolvedValue('$2a$12$hash')
+    mockPrisma.cliente.create.mockResolvedValue({ id: 'cli-2', nombre: 'Ana', email: 'ana@test.com' })
+    const res = await supertest(app).post(`${apiPrefix}/clientes/auth/registro`).send({
+      nombre: 'Ana', apellido: 'López', email: 'ana@test.com',
+      password: 'Password1_', autorizacionDatos: true,
+    })
+    expect(res.status).toBe(201)
+  })
+
+  it('acepta password con guión (-)', async () => {
+    mockPrisma.cliente.findUnique.mockResolvedValue(null)
+    mockBcrypt.hash.mockResolvedValue('$2a$12$hash')
+    mockPrisma.cliente.create.mockResolvedValue({ id: 'cli-3', nombre: 'Luis', email: 'luis@test.com' })
+    const res = await supertest(app).post(`${apiPrefix}/clientes/auth/registro`).send({
+      nombre: 'Luis', apellido: 'García', email: 'luis@test.com',
+      password: 'Password1-', autorizacionDatos: true,
+    })
+    expect(res.status).toBe(201)
+  })
+
+  it('acepta password con signo más (+)', async () => {
+    mockPrisma.cliente.findUnique.mockResolvedValue(null)
+    mockBcrypt.hash.mockResolvedValue('$2a$12$hash')
+    mockPrisma.cliente.create.mockResolvedValue({ id: 'cli-4', nombre: 'María', email: 'maria@test.com' })
+    const res = await supertest(app).post(`${apiPrefix}/clientes/auth/registro`).send({
+      nombre: 'María', apellido: 'Martínez', email: 'maria@test.com',
+      password: 'Password1+', autorizacionDatos: true,
+    })
+    expect(res.status).toBe(201)
+  })
+
+  it('acepta password con igual (=)', async () => {
+    mockPrisma.cliente.findUnique.mockResolvedValue(null)
+    mockBcrypt.hash.mockResolvedValue('$2a$12$hash')
+    mockPrisma.cliente.create.mockResolvedValue({ id: 'cli-5', nombre: 'Carlos', email: 'carlos@test.com' })
+    const res = await supertest(app).post(`${apiPrefix}/clientes/auth/registro`).send({
+      nombre: 'Carlos', apellido: 'Ruiz', email: 'carlos@test.com',
+      password: 'Password1=', autorizacionDatos: true,
+    })
+    expect(res.status).toBe(201)
+  })
+
+  it('acepta password con múltiples símbolos variados', async () => {
+    mockPrisma.cliente.findUnique.mockResolvedValue(null)
+    mockBcrypt.hash.mockResolvedValue('$2a$12$hash')
+    mockPrisma.cliente.create.mockResolvedValue({ id: 'cli-6', nombre: 'Sofía', email: 'sofia@test.com' })
+    const res = await supertest(app).post(`${apiPrefix}/clientes/auth/registro`).send({
+      nombre: 'Sofía', apellido: 'Torres', email: 'sofia@test.com',
+      password: 'S0f!@-_+=', autorizacionDatos: true,
+    })
+    expect(res.status).toBe(201)
+  })
+
   it('maneja error interno', async () => {
     mockPrisma.cliente.findUnique.mockRejectedValue(new Error('DB error'))
     const res = await supertest(app).post(`${apiPrefix}/clientes/auth/registro`).send({

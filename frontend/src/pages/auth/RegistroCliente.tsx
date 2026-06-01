@@ -10,6 +10,7 @@ function PasswordStrength({ password }: { password: string }) {
     { label: 'Una mayúscula', ok: /[A-Z]/.test(password) },
     { label: 'Una minúscula', ok: /[a-z]/.test(password) },
     { label: 'Un número', ok: /\d/.test(password) },
+    { label: 'Un carácter especial', ok: /[!@#$%^&*_\-+=]/.test(password) },
   ]
   const strength = checks.filter(c => c.ok).length
   const barColor = ['bg-red-400', 'bg-orange-400', 'bg-yellow-400', 'bg-lime-400', 'bg-green-400']
@@ -32,7 +33,7 @@ function PasswordStrength({ password }: { password: string }) {
 
 export default function RegistroCliente() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ nombre: '', apellido: '', email: '', password: '', confirmar: '' })
+  const [form, setForm] = useState({ nombre: '', apellido: '', email: '', password: '', confirmar: '', tipoDoc: 'CC', documento: '' })
   const [verPass, setVerPass] = useState(false)
   const [aceptoTerminos, setAceptoTerminos] = useState(false)
   const [cargando, setCargando] = useState(false)
@@ -40,7 +41,7 @@ export default function RegistroCliente() {
   const handleChange = (campo: string, valor: string) => setForm(f => ({ ...f, [campo]: valor }))
 
   const passwordCoincide = form.password === form.confirmar
-  const passwordValida = form.password.length >= 8 && /[A-Z]/.test(form.password) && /[a-z]/.test(form.password) && /\d/.test(form.password)
+  const passwordValida = form.password.length >= 8 && /[A-Z]/.test(form.password) && /[a-z]/.test(form.password) && /\d/.test(form.password) && /[!@#$%^&*_\-+=]/.test(form.password)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,6 +54,7 @@ export default function RegistroCliente() {
       await authClienteService.registro({
         nombre: form.nombre, apellido: form.apellido,
         email: form.email, password: form.password,
+        tipoDoc: form.tipoDoc, documento: form.documento,
         autorizacionDatos: true,
       })
       toast.success('¡Cuenta creada exitosamente! Revisa tu correo para verificar tu cuenta.')
@@ -69,22 +71,41 @@ export default function RegistroCliente() {
       <h2 className="text-xl font-semibold mb-1">Crear cuenta</h2>
       <p className="text-sm text-gray-500 mb-6">Regístrate para comprar en Farmacy</p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="reg-nombre" className="block text-xs font-medium text-gray-700 mb-1.5">Nombre</label>
-            <div className="relative">
-              <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input id="reg-nombre" type="text" value={form.nombre} onChange={e => handleChange('nombre', e.target.value)}
-                className="input-base pl-10" placeholder="Juan" autoComplete="given-name" required />
+      <form onSubmit={handleSubmit} className="space-y-4">          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="reg-nombre" className="block text-xs font-medium text-gray-700 mb-1.5">Nombre</label>
+              <div className="relative">
+                <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input id="reg-nombre" type="text" value={form.nombre} onChange={e => handleChange('nombre', e.target.value)}
+                  className="input-base pl-10" placeholder="Juan" autoComplete="given-name" required />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="reg-apellido" className="block text-xs font-medium text-gray-700 mb-1.5">Apellido</label>
+              <input id="reg-apellido" type="text" value={form.apellido} onChange={e => handleChange('apellido', e.target.value)}
+                className="input-base" placeholder="Pérez" autoComplete="family-name" required />
             </div>
           </div>
-          <div>
-            <label htmlFor="reg-apellido" className="block text-xs font-medium text-gray-700 mb-1.5">Apellido</label>
-            <input id="reg-apellido" type="text" value={form.apellido} onChange={e => handleChange('apellido', e.target.value)}
-              className="input-base" placeholder="Pérez" autoComplete="family-name" required />
+
+          {/* Documento de identidad */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label htmlFor="reg-tipo-doc" className="block text-xs font-medium text-gray-700 mb-1.5">Tipo doc.</label>
+              <select id="reg-tipo-doc" value={form.tipoDoc} onChange={e => handleChange('tipoDoc', e.target.value)}
+                className="input-base" required>
+                <option value="CC">CC</option>
+                <option value="CE">CE</option>
+                <option value="NIT">NIT</option>
+                <option value="PEP">PEP</option>
+                <option value="PPT">PPT</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="reg-documento" className="block text-xs font-medium text-gray-700 mb-1.5">Número de documento</label>
+              <input id="reg-documento" type="text" value={form.documento} onChange={e => handleChange('documento', e.target.value)}
+                className="input-base" placeholder="1.234.567.890" autoComplete="off" required />
+            </div>
           </div>
-        </div>
 
         <div>
           <label htmlFor="reg-email" className="block text-xs font-medium text-gray-700 mb-1.5">Correo electrónico</label>
