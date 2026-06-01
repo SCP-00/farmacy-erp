@@ -64,8 +64,6 @@ authClienteRouter.post(
       const hash  = await bcrypt.hash(password, 12)
       const token = crypto.randomBytes(32).toString('hex')
 
-      const esDev = env.NODE_ENV === 'development'
-
       const cliente = await prisma.cliente.create({
         data: {
           nombre, apellido, email,
@@ -73,15 +71,14 @@ authClienteRouter.post(
           tipoDoc: tipoDoc || undefined,
           documento: documento || undefined,
           autorizacionDatos,
-          tokenVerificacion: token, // Siempre guardamos el token (por si hacen clic en el link)
-          emailVerificado: esDev, // Auto-verificar en desarrollo
+          tokenVerificacion: token, // Token para verificación por email
         },
         select: { id: true, nombre: true, email: true },
       })
 
-      // Enviar email de verificación (solo si hay SMTP configurado)
-      if (!esDev || env.SMTP_HOST) {
-        const url = `${env.FRONTEND_URL}/verificar/${token}`
+      // Enviar email de verificación (siempre que haya SMTP configurado)
+      if (env.SMTP_HOST) {
+        const url = `${env.FRONTEND_URL}/verificar-email?token=${token}`
         sendEmail({
           to: email,
           subject: 'Verifica tu cuenta en Farmacy',
@@ -113,17 +110,7 @@ authClienteRouter.post(
       }
 
       if (!cliente.emailVerificado) {
-        // En desarrollo, auto-verificamos al hacer login
-        // (cubre cuentas creadas antes de tener el fix de auto-verify)
-        if (env.NODE_ENV === 'development') {
-          await prisma.cliente.update({
-            where: { id: cliente.id },
-            data: { emailVerificado: true, tokenVerificacion: null },
-          })
-          logger.info(`[AuthCliente] Auto-verificado en login: ${email}`)
-        } else {
-          return responder.error(res, 'Debes verificar tu email primero', 403)
-        }
+        return responder.error(res, 'Debes verificar tu email primero. Revisa tu bandeja de entrada.', 403)
       }
 
       const ok = await bcrypt.compare(password, cliente.password)
@@ -209,7 +196,7 @@ authClienteRouter.post('/recuperar-password', limitarCreacion, async (req: Reque
       data: { tokenResetPass: token, tokenResetExpira: expira },
     })
 
-    const url = `${env.FRONTEND_URL}/reset/${token}`
+    const url = `${env.FRONTEND_URL}/reset-password?token=${token}`
     sendEmail({
       to: email,
       subject: 'Restablece tu contraseña — Farmacy',

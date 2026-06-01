@@ -6,7 +6,12 @@ const transporter = nodemailer.createTransport({
   host: env.SMTP_HOST,
   port: parseInt(env.SMTP_PORT),
   ...(env.SMTP_USER
-    ? { auth: { user: env.SMTP_USER, pass: env.SMTP_PASS } }
+    ? {
+        auth: { user: env.SMTP_USER, pass: env.SMTP_PASS },
+        // En desarrollo, no rechazar certificados si el hostname no coincide
+        // (ocurre con Brevo en algunas regiones como Sudamérica)
+        ...(env.NODE_ENV === 'development' ? { tls: { rejectUnauthorized: false } } : {}),
+      }
     : { ignoreTLS: true }),
 })
 
