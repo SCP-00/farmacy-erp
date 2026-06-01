@@ -64,6 +64,8 @@ authClienteRouter.post(
       const hash  = await bcrypt.hash(password, 12)
       const token = crypto.randomBytes(32).toString('hex')
 
+      const esDev = env.NODE_ENV === 'development'
+
       const cliente = await prisma.cliente.create({
         data: {
           nombre, apellido, email,
@@ -71,18 +73,21 @@ authClienteRouter.post(
           tipoDoc: tipoDoc || undefined,
           documento: documento || undefined,
           autorizacionDatos,
-          tokenVerificacion: token,
+          tokenVerificacion: esDev ? null : token,
+          emailVerificado: esDev, // Auto-verificar en desarrollo
         },
         select: { id: true, nombre: true, email: true },
       })
 
-      // Enviar email de verificación
-      const url = `${env.FRONTEND_URL}/verificar/${token}`
-      sendEmail({
-        to: email,
-        subject: 'Verifica tu cuenta en Farmacy',
-        html: emailTemplates.verificarEmail(nombre, url),
-      })
+      // Enviar email de verificación (solo si hay SMTP configurado)
+      if (!esDev || env.SMTP_HOST) {
+        const url = `${env.FRONTEND_URL}/verificar/${token}`
+        sendEmail({
+          to: email,
+          subject: 'Verifica tu cuenta en Farmacy',
+          html: emailTemplates.verificarEmail(nombre, url),
+        })
+      }
 
       logger.info(`[AuthCliente] Nuevo registro: ${email}`)
       return responder.creado(res, cliente, 'Cuenta creada. Revisa tu correo para verificarla.')
