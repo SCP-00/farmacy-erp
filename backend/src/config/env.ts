@@ -2,9 +2,11 @@ import { z } from 'zod'
 import dotenv from 'dotenv'
 import path from 'path'
 
-// Carga .env: primero backend/.env, luego raíz del monorepo (último tiene prioridad)
-dotenv.config({ path: path.resolve(__dirname, '../../.env') })                  // backend/.env
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') })               // raíz .env (sobrescribe)
+// Carga .env: raíz del monorepo primero (base), luego backend/.env con override: true
+// ⚠️ dotenv.config() por defecto NO sobreescribe variables existentes.
+//    Por eso necesitamos override: true para que backend/.env tenga prioridad.
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') })               // raíz .env (base)
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), override: true })  // backend/.env (sobrescribe)
 
 const envSchema = z.object({
   // Servidor

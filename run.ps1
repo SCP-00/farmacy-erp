@@ -424,8 +424,13 @@ try {
     try {
         Push-Location (Join-Path $ROOT "backend")
         $prismaSchema = Join-Path (Join-Path (Join-Path $ROOT "database") "prisma") "schema.prisma"
-        npx prisma generate --schema=$prismaSchema 2>&1 | Out-Null
-        if (-not $?) { throw "prisma generate fallo" }
+        $pgOutput = npx prisma generate --schema=$prismaSchema 2>&1
+        $pgExitCode = $LASTEXITCODE
+        if ($pgExitCode -ne 0) {
+            Write-Warn "Salida de prisma generate:"
+            $pgOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+            throw "prisma generate fallo (exit code: $pgExitCode)"
+        }
         Write-OK "Prisma Client generado"
     } catch {
         Write-Err "Fallo prisma generate: $_"
@@ -439,8 +444,13 @@ try {
     $composeFile = Join-Path $ROOT "docker-compose.dev.yml"
     try {
         Push-Location $ROOT
-        docker compose -f $composeFile up -d
-        if ($LASTEXITCODE -ne 0) { throw "docker compose fallo" }
+        $dcOutput = docker compose -f $composeFile up -d 2>&1
+        $dcExit = $LASTEXITCODE
+        if ($dcExit -ne 0) {
+            Write-Err "docker compose fallo (exit code: $dcExit):"
+            $dcOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+            throw "docker compose up -d fallo"
+        }
         Write-OK "Contenedores iniciados"
     } catch {
         Write-Err "Fallo al levantar contenedores Docker: $_"
@@ -502,16 +512,21 @@ try {
         Push-Location (Join-Path $ROOT "backend")
         $prevDbUrl = $env:DATABASE_URL
         $env:DATABASE_URL = 'postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db'
-        npx prisma migrate deploy --schema=../database/prisma/schema.prisma 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        $mgOutput = npx prisma migrate deploy --schema=../database/prisma/schema.prisma 2>&1
+        $mgExit = $LASTEXITCODE
+        if ($mgExit -eq 0) {
             Write-OK "Migraciones ejecutadas"
         } else {
-            Write-Warn "migrate deploy fallo, intentando db push..."
-            npx prisma db push --schema=../database/prisma/schema.prisma 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
+            Write-Warn "migrate deploy fallo (exit code: $mgExit), intentando db push..."
+            $mgOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+            $pushOutput = npx prisma db push --schema=../database/prisma/schema.prisma 2>&1
+            $pushExit = $LASTEXITCODE
+            if ($pushExit -eq 0) {
                 Write-OK "Esquema aplicado via db push"
             } else {
-                Write-Warn "No se pudo aplicar el esquema - el backend podria fallar"
+                Write-Warn "db push tambien fallo (exit code: $pushExit):"
+                $pushOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+                Write-Warn "El backend podria fallar sin las migraciones"
             }
         }
         $env:DATABASE_URL = $prevDbUrl
@@ -525,11 +540,13 @@ try {
     Write-StepLabel "7c" "Cargando seeds de la base de datos..."
     try {
         Push-Location (Join-Path $ROOT "backend")
-        pnpm run db:seed 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        $seedOutput = pnpm run db:seed 2>&1
+        $seedExit = $LASTEXITCODE
+        if ($seedExit -eq 0) {
             Write-OK "Seeds ejecutados"
         } else {
-            Write-Warn "Seeds fallaron (puede ser normal si la DB ya tiene datos)"
+            Write-Warn "Seeds devolvieron codigo $seedExit (puede ser normal si la DB ya tiene datos):"
+            $seedOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
         }
     } catch {
         Write-Warn "Error al ejecutar seeds: $_"
@@ -546,8 +563,12 @@ try {
             Write-Skip "$pkg/node_modules no encontrado. Ejecutando pnpm install..."
             try {
                 Push-Location $pkgDir
-                pnpm install
-                if ($LASTEXITCODE -ne 0) { throw "pnpm install fallo en $pkg" }
+                $installOut = pnpm install 2>&1
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warn "Salida de pnpm install:"
+                    $installOut | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+                    throw "pnpm install fallo en $pkg"
+                }
                 Write-OK "Dependencias de $pkg instaladas"
             } catch {
                 Write-Err "Fallo pnpm install en $pkg: $_"
