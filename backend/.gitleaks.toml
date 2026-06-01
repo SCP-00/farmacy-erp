@@ -77,4 +77,7 @@ paths = [
   # Lockfiles generados automáticamente
   '''(^|/)pnpm-lock\.yaml$''',
   '''(^|/)package-lock\.json$''',
+  # CI workflows contienen credenciales de test (JWT_SECRET, DATABASE_URL, etc.)
+  '''(^|/)\.github/workflows/.*\.yml$''',
+  '''(^|/)\.github/workflows/.*\.yaml$''',
 ]

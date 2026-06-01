@@ -36,6 +36,20 @@ jobs:
     timeout-minutes: 15
 
     services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: farmacy_db
+          POSTGRES_USER: farmacy_user
+          POSTGRES_PASSWORD: farmacy_pass
+        options: >-
+          --health-cmd "pg_isready -U farmacy_user -d farmacy_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
       redis:
         image: redis:7-alpine
         options: >-
@@ -45,6 +59,14 @@ jobs:
           --health-retries 5
         ports:
           - 6379:6379
+
+    env:
+      DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
+      REDIS_URL: "redis://localhost:6379"
+      JWT_SECRET: "test_jwt_secret_minimo_32_caracteres_para_ci"
+      JWT_REFRESH_SECRET: "test_refresh_secret_minimo_32_caracteres_para_ci"
+      JWT_CLIENTE_SECRET: "test_cliente_secret_minimo_32_caracteres_ci"
+      NODE_ENV: "test"
 
     steps:
       - name: Checkout
@@ -68,8 +90,14 @@ jobs:
       - name: Generate Prisma Client
         working-directory: ./backend
         run: npx prisma generate --schema=../database/prisma/schema.prisma
-        env:
-          DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
+
+      - name: Deploy database migrations
+        working-directory: ./backend
+        run: npx prisma migrate deploy --schema=../database/prisma/schema.prisma
+
+      - name: Seed database
+        working-directory: ./backend
+        run: pnpm exec tsx ../database/seeds/seed.ts
 
       - name: TypeScript check
         working-directory: ./backend
@@ -77,21 +105,13 @@ jobs:
 
       - name: Run tests
         working-directory: ./backend
-        continue-on-error: true  # Tests pre-existentes (Stripe sandbox) no bloquean el CI
+        continue-on-error: true
         run: pnpm run test
-        env:
-          DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
-          REDIS_URL: "redis://localhost:6379"
-          JWT_SECRET: "test_jwt_secret_minimo_32_caracteres_para_ci"
-          JWT_REFRESH_SECRET: "test_refresh_secret_minimo_32_caracteres_para_ci"
-          JWT_CLIENTE_SECRET: "test_cliente_secret_minimo_32_caracteres_ci"
-          NODE_ENV: "test"
 
       - name: Build
         working-directory: ./backend
         run: pnpm run build
         env:
-          DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
           NODE_ENV: "production"
 
   # ── Frontend: typecheck + build ────────────────────────
@@ -136,6 +156,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    env:
+      DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -162,5 +185,3 @@ jobs:
       - name: Generate Prisma Client
         working-directory: ./backend
         run: npx prisma generate --schema=../database/prisma/schema.prisma
-        env:
-          DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
