@@ -73,7 +73,7 @@ authClienteRouter.post(
           tipoDoc: tipoDoc || undefined,
           documento: documento || undefined,
           autorizacionDatos,
-          tokenVerificacion: esDev ? null : token,
+          tokenVerificacion: token, // Siempre guardamos el token (por si hacen clic en el link)
           emailVerificado: esDev, // Auto-verificar en desarrollo
         },
         select: { id: true, nombre: true, email: true },

@@ -24,7 +24,7 @@ on:
     types: [labeled]
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "24"
   PNPM_VERSION: "11"
 
 jobs:
@@ -75,16 +75,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
-          cache-dependency-path: |
-            backend/pnpm-lock.yaml
-            frontend/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install backend dependencies
-        working-directory: ./backend
-        run: pnpm install --frozen-lockfile
-
-      - name: Install frontend dependencies
-        working-directory: ./frontend
+      - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browsers
@@ -102,10 +95,14 @@ jobs:
         run: npx prisma migrate deploy --schema=../database/prisma/schema.prisma
         env:
           DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
+          JWT_SECRET: "test_jwt_secret_minimo_32_caracteres_para_ci"
+          JWT_REFRESH_SECRET: "test_refresh_secret_minimo_32_caracteres_para_ci"
+          JWT_CLIENTE_SECRET: "test_cliente_secret_minimo_32_caracteres_ci"
+          NODE_ENV: "development"
 
       - name: Seed database
         working-directory: ./backend
-        run: npx tsx ../database/seeds/seed.ts
+        run: pnpm exec tsx ../database/seeds/seed.ts
         env:
           DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
           JWT_SECRET: "test_jwt_secret_minimo_32_caracteres_para_ci"
