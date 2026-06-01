@@ -60,13 +60,18 @@ cajaRouter.post('/:id/cerrar', autenticar, autorizar('ADMINISTRADOR','FARMACEUTA
         return responder.error(res, `Hay ${pendientes} venta(s) pendientes por procesar`)
       }
 
+      // Obtener montoApertura de la caja para calcular diferencia correctamente
+      const cajaActual = await prisma.caja.findUnique({ where: { id: req.params.id } })
+      const montoApertura = Number(cajaActual?.montoApertura ?? 0)
+
       const totalVentas = await prisma.venta.aggregate({
         where:  { cajaId: req.params.id, estado: 'PAGADO' },
         _sum:   { total: true },
       })
 
       const total      = Number(totalVentas._sum.total ?? 0)
-      const diferencia = (montoCierre ?? 0) - total
+      // Diferencia = lo que el empleado dice tener - lo que DEBE tener (apertura + ventas)
+      const diferencia = (montoCierre ?? 0) - (montoApertura + total)
 
       const caja = await prisma.caja.update({
         where: { id: req.params.id },

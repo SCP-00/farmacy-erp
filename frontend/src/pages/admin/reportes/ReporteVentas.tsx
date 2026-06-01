@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Users, Calendar, Download, Filter } from 'lucide-react'
+import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Users, Calendar, Download, Filter, Clock } from 'lucide-react'
 import { reportesService } from '@/services'
 import { useFormateo } from '@/hooks'
 import { ESTADO_VENTA_LABEL, METODO_PAGO_LABEL } from '@/config/constants'
@@ -18,6 +18,7 @@ export default function ReporteVentas() {
   const [desde, setDesde] = useState(hace30dias)
   const [hasta, setHasta] = useState(hoy)
   const [sucursalId, setSucursalId] = useState<number | undefined>(undefined)
+  const [pestana, setPestana] = useState<'todas' | 'pendientes' | 'pagadas'>('todas')
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['reportes', 'ventas', { desde, hasta, sucursalId }],
@@ -38,10 +39,16 @@ export default function ReporteVentas() {
     </div>
   )
 
+  const todasVentas = data?.ventas ?? []
+  const ventasFiltradas = pestana === 'todas' ? todasVentas
+    : todasVentas.filter((v: any) => v.estado === (pestana === 'pendientes' ? 'PENDIENTE' : 'PAGADO'))
+
   const totalVentas = data?.totalVentas ?? 0
   const montoTotal = data?.montoTotal ?? 0
   const ticketPromedio = totalVentas > 0 ? montoTotal / totalVentas : 0
   const clientesUnicos = data?.clientesUnicos ?? 0
+  const pendientes = todasVentas.filter((v: any) => v.estado === 'PENDIENTE')
+  const montoPendiente = pendientes.reduce((sum: number, v: any) => sum + Number(v.total), 0)
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 max-w-7xl mx-auto">
@@ -93,8 +100,23 @@ export default function ReporteVentas() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl w-fit">
+        {[{ key: 'todas' as const, label: 'Todas', count: todasVentas.length },
+          { key: 'pendientes' as const, label: 'Pendientes', count: pendientes.length },
+          { key: 'pagadas' as const, label: 'Pagadas', count: todasVentas.filter((v: any) => v.estado === 'PAGADO').length }].map(tab => (
+          <button key={tab.key} onClick={() => setPestana(tab.key)}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+              pestana === tab.key
+                ? 'bg-white shadow-sm text-teal-700'
+                : 'text-gray-500 hover:text-gray-700'}`}>
+            {tab.label} ({tab.count})
+          </button>
+        ))}
+      </div>
+
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="surface p-5">
           <div className="flex items-center gap-3 text-teal-700 mb-3"><DollarSign size={18} /><span className="text-sm font-semibold">Facturación</span></div>
           <p className="text-2xl font-bold text-slate-900">{formatCOP(montoTotal)}</p>
@@ -115,19 +137,26 @@ export default function ReporteVentas() {
           <p className="text-2xl font-bold text-slate-900">{clientesUnicos}</p>
           <p className="text-xs text-gray-500 mt-1">Clientes atendidos</p>
         </div>
+        <div className="surface p-5 border-2 border-amber-200 bg-amber-50/50">
+          <div className="flex items-center gap-3 text-amber-700 mb-3"><Clock size={18} /><span className="text-sm font-semibold">Por cobrar</span></div>
+          <p className="text-2xl font-bold text-amber-900">{formatCOP(montoPendiente)}</p>
+          <p className="text-xs text-amber-600 mt-1">{pendientes.length} venta{pendientes.length !== 1 ? 's' : ''} pendiente{pendientes.length !== 1 ? 's' : ''}</p>
+        </div>
       </div>
 
       {/* Tabla de Ventas Recientes */}
       <div className="surface overflow-hidden">
         <div className="p-5 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
-          <h2 className="font-semibold text-gray-900">Ventas recientes</h2>
-          <span className="text-xs text-gray-400">{data?.ventas?.length ?? 0} registros</span>
+          <h2 className="font-semibold text-gray-900">
+            {pestana === 'todas' ? 'Todas las ventas' : pestana === 'pendientes' ? 'Ventas pendientes de cobro' : 'Ventas pagadas'}
+          </h2>
+          <span className="text-xs text-gray-400">{ventasFiltradas.length} registros</span>
         </div>
 
         {!data?.ventas?.length ? (
           <div className="p-8 text-center text-gray-400">
             <ShoppingCart size={40} className="mx-auto mb-3 text-gray-200" />
-            <p>No hay ventas en el período seleccionado.</p>
+            <p>{pestana === 'pendientes' ? 'No hay ventas pendientes en el período seleccionado.' : 'No hay ventas en el período seleccionado.'}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -143,7 +172,7 @@ export default function ReporteVentas() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {(data?.ventas ?? []).map((venta: any) => (
+                {ventasFiltradas.map((venta: any) => (
                   <tr key={venta.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="px-5 py-4 font-mono font-medium text-gray-700">{venta.factura}</td>
                     <td className="px-5 py-4 text-gray-600">{fechaCorta(venta.fecha)}</td>
