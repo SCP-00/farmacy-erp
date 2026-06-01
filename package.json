@@ -13,7 +13,8 @@
     "csv-stringify": "^6.7.0",
     "js-yaml": "^4.1.1",
     "playwright": "^1.60.0",
-    "prisma": "^5.22.0"
+    "prisma": "^5.22.0",
+    "tsx": "^4.22.4"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

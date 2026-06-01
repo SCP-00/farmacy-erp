@@ -97,7 +97,7 @@ jobs:
 
       - name: Seed database
         working-directory: ./backend
-        run: pnpm run db:seed
+        run: pnpm exec tsx ../database/seeds/seed.ts
 
       - name: TypeScript check
         working-directory: ./backend
