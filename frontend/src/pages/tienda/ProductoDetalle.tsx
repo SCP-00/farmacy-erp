@@ -10,7 +10,7 @@ import SEOHead from '@/components/shared/SEOHead'
 import InteractionAlertModal from '@/components/shared/InteractionAlertModal'
 
 export default function ProductoDetalle() {
-  const { slug: id } = useParams()
+  const { id } = useParams()
   const { cop } = useFormateo()
   const agregar = useCarritoStore((state) => state.agregar)
   const { estaLogueado } = useAuthCliente()

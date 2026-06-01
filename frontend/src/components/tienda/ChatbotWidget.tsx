@@ -46,7 +46,7 @@ function ProductCard({ p }: { p: ProductoChatbot }) {
         )}
       </div>
       <button
-        onClick={() => navigate(`/producto/${p.id}`)}
+        onClick={() => navigate(`/productos/${p.id}`)}
         className="flex-shrink-0 px-2 py-1 bg-gradient-to-r from-teal-600 to-teal-700 text-white text-[9px] font-semibold rounded-lg hover:from-teal-500 hover:to-teal-600 transition-all duration-200 active:scale-90"
         title="Ver producto"
       >

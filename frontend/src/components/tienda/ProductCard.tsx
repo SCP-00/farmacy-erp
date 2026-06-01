@@ -55,16 +55,18 @@ export function ProductCard({ producto, variant = 'grid' }: any) {
   const precioActual = Number(producto.precioVenta)
   const precioAnterior = Math.round(precioActual * 1.18)
 
+  const productLink = producto.id ? `/productos/${producto.id}` : '#'
+
   if (variant === 'list') {
     return (
       <div className="flex gap-4 p-4 surface transition hover:-translate-y-0.5">
-        <Link to={`/productos/${producto.id}`} className="flex-shrink-0">
+        <Link to={productLink} className="flex-shrink-0">
           <div className="w-20 h-20 bg-teal-50 dark:bg-teal-900/30 rounded-2xl flex items-center justify-center">
             <Pill className="w-10 h-10 text-teal-300" />
           </div>
         </Link>
         <div className="flex-1">
-          <Link to={`/productos/${producto.id}`} className="font-semibold text-slate-900 dark:text-dark-text hover:text-teal-700 dark:hover:text-teal-400">
+          <Link to={productLink} className="font-semibold text-slate-900 dark:text-dark-text hover:text-teal-700 dark:hover:text-teal-400">
             {producto.nombre}
           </Link>
           <p className="text-sm text-slate-600 dark:text-dark-text-secondary">{producto.laboratorio} • {producto.presentacion}</p>
@@ -85,7 +87,7 @@ export function ProductCard({ producto, variant = 'grid' }: any) {
 
   return (
     <div className="surface overflow-hidden transition group hover:-translate-y-0.5">
-      <Link to={`/productos/${producto.id}`} className="relative block overflow-hidden bg-slate-100 dark:bg-dark-surface aspect-square">
+      <Link to={productLink} className="relative block overflow-hidden bg-slate-100 dark:bg-dark-surface aspect-square">
         <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-teal-50 dark:from-teal-900/30 to-sky-50 dark:to-sky-900/20">
           <Pill className="w-16 h-16 text-teal-300" />
         </div>
@@ -100,7 +102,7 @@ export function ProductCard({ producto, variant = 'grid' }: any) {
         )}
       </Link>
 
-      <div className="p-4">          <Link to={`/productos/${producto.id}`}>
+      <div className="p-4">          <Link to={productLink}>
           <h3 className="font-semibold text-slate-900 dark:text-dark-text text-sm line-clamp-2 hover:text-teal-700 dark:hover:text-teal-400 mb-1 min-h-[40px]">
             {producto.nombre} {producto.concentracion}
           </h3>

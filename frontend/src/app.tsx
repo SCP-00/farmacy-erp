@@ -96,7 +96,7 @@ export default function App() {
             <Route index                    element={<Inicio />} />
             <Route path="/productos"        element={<Catalogo />} />
             <Route path="/catalogo"         element={<Navigate to="/productos" replace />} />
-            <Route path="/productos/:slug"  element={<ProductoDetalle />} />
+            <Route path="/productos/:id"    element={<ProductoDetalle />} />
             <Route path="/carrito"          element={<Carrito />} />
             <Route path="/sucursales"       element={<Sucursales />} />
             <Route path="/contacto"         element={<Contacto />} />
