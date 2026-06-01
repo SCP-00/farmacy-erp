@@ -13,10 +13,10 @@
   Ejecutar desde PowerShell:  .\run.ps1
   Recomendado: .\run.ps1 (PowerShell)
 
-  ⚠️  NO ejecutes este script desde Git Bash ni otras shells MSYS/Cygwin.
-      MSYS traduce rutas que empiezan con / (como /api/v1) a rutas
-      de Windows (C:/Program Files/Git/api/v1), lo que rompe todas
-      las rutas de la API. Usa PowerShell nativo.
+  NO ejecutes este script desde Git Bash ni otras shells MSYS/Cygwin.
+  MSYS traduce rutas que empiezan con / (como /api/v1) a rutas
+  de Windows (C:/Program Files/Git/api/v1), lo que rompe todas
+  las rutas de la API. Usa PowerShell nativo.
 #>
 
 #requires -Version 5.1
@@ -51,14 +51,14 @@ function Write-Step {
         [string]$Message
     )
     Write-Host " " -NoNewline
-    Write-Host "[$Num/$Total]" -ForegroundColor Cyan -NoNewline
+    Write-Host ("[$Num/$Total]") -ForegroundColor Cyan -NoNewline
     Write-Host " $Message"
 }
 
 function Write-StepLabel {
     param([string]$Label, [string]$Message)
     Write-Host " " -NoNewline
-    Write-Host "[$Label]" -ForegroundColor DarkGray -NoNewline
+    Write-Host ("[$Label]") -ForegroundColor DarkGray -NoNewline
     Write-Host " $Message"
 }
 
@@ -139,9 +139,9 @@ function Stop-ProcessOnPort {
         return $true
     }
 
-    foreach ($pid in $pids) {
+    foreach ($currentPid in $pids) {
         # Obtener nombre del proceso para seguridad
-        $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+        $proc = Get-Process -Id $currentPid -ErrorAction SilentlyContinue
         if (-not $proc) { continue }
 
         $procName = $proc.ProcessName.ToLower()
@@ -154,17 +154,17 @@ function Stop-ProcessOnPort {
         }
 
         if ($isProtected) {
-            Write-Warn "PID $pid ($($proc.ProcessName)) es Codebuff/freebuff — NO se termina."
+            Write-Warn ("PID " + $currentPid + " (" + $proc.ProcessName + ") es Codebuff/freebuff - NO se termina.")
             return $false
         }
 
         # Intentar terminar
-        $labelInfo = if ($Label) { " ($Label)" } else { '' }
-        Write-Warn "Terminando proceso zombie PID $pid ($($proc.ProcessName))$labelInfo en puerto $Port..."
+        $labelInfo = if ($Label) { " (" + $Label + ")" } else { '' }
+        Write-Warn ("Terminando proceso zombie PID " + $currentPid + " (" + $proc.ProcessName + ")" + $labelInfo + " en puerto " + $Port + "...")
         try {
-            Stop-Process -Id $pid -Force -ErrorAction Stop
+            Stop-Process -Id $currentPid -Force -ErrorAction Stop
         } catch {
-            Write-Err "No se pudo terminar PID $pid: $_"
+            Write-Err ("No se pudo terminar PID " + $currentPid + ": " + $_)
             return $false
         }
     }
@@ -175,11 +175,11 @@ function Stop-ProcessOnPort {
     # Verificar
     $stillOccupied = Get-ProcessOnPort -Port $Port
     if ($stillOccupied) {
-        Write-Warn "Puerto $Port sigue ocupado tras 2s, esperando mas..."
+        Write-Warn ("Puerto " + $Port + " sigue ocupado tras 2s, esperando mas...")
         Start-Sleep -Seconds 3
         $stillOccupied = Get-ProcessOnPort -Port $Port
         if ($stillOccupied) {
-            Write-Err "Puerto $Port no se pudo liberar (PID $stillOccupied persiste)"
+            Write-Err ("Puerto " + $Port + " no se pudo liberar (PID " + $stillOccupied + " persiste)")
             return $false
         }
     }
@@ -208,7 +208,7 @@ function Start-HealthcheckLoop {
         }
 
         if ($attempt % 5 -eq 0) {
-            Write-Host "   ...intento $attempt de $maxAttempts" -ForegroundColor DarkGray
+            Write-Host ("   ...intento " + $attempt + " de " + $maxAttempts) -ForegroundColor DarkGray
         }
     }
 
@@ -285,7 +285,7 @@ try {
         exit 1
     }
     $nodeVer = node --version
-    Write-OK "Node.js detectado: $nodeVer"
+    Write-OK ("Node.js detectado: " + $nodeVer)
 
     # -- [2/10] Verificar / Instalar pnpm -----------------------
     Write-Step 2 10 "Verificando pnpm..."
@@ -304,7 +304,7 @@ try {
         }
     }
     $pnpmVer = pnpm --version
-    Write-OK "pnpm detectado: v$pnpmVer"
+    Write-OK ("pnpm detectado: v" + $pnpmVer)
 
     # -- [3/10] Verificar Docker ---------------------------------
     Write-Step 3 10 "Verificando Docker..."
@@ -335,8 +335,8 @@ try {
         if ($killed) {
             Write-OK "Puerto 3000 liberado (proceso zombie eliminado)"
         } else {
-            Write-Warn "Puerto 3000 puede seguir ocupado — el backend podria fallar al iniciar"
-            Write-Host "   Para liberarlo manualmente:  Stop-Process -Id $port3000 -Force"
+            Write-Warn "Puerto 3000 puede seguir ocupado - el backend podria fallar al iniciar"
+            Write-Host ("   Para liberarlo manualmente:  Stop-Process -Id " + $port3000 + " -Force")
         }
     }
 
@@ -347,8 +347,8 @@ try {
         if ($killed) {
             Write-OK "Puerto 5173 liberado (proceso zombie eliminado)"
         } else {
-            Write-Warn "Puerto 5173 puede seguir ocupado — el frontend podria fallar al iniciar"
-            Write-Host "   Para liberarlo manualmente:  Stop-Process -Id $port5173 -Force"
+            Write-Warn "Puerto 5173 puede seguir ocupado - el frontend podria fallar al iniciar"
+            Write-Host ("   Para liberarlo manualmente:  Stop-Process -Id " + $port5173 + " -Force")
         }
     }
 
@@ -362,7 +362,7 @@ try {
     # Advertencia MSYS: verificar si el backend se ejecuto desde Git Bash
     # (La variable MSYSTEM solo existe en shells MSYS)
     if ($env:MSYSTEM) {
-        Write-Warn "Estas ejecutando este script desde un shell MSYS ($($env:MSYSTEM))"
+        Write-Warn ("Estas ejecutando este script desde un shell MSYS (" + $env:MSYSTEM + ")")
         Write-Host "   run.ps1 inicia los servidores via PowerShell nativo, asi que no hay problema."
         Write-Host "   Pero si ejecutas comandos directamente (pnpm run dev) desde esta terminal,"
         Write-Host "   MSYS traduce /api/v1 -> C:/Program Files/Git/api/v1 y rompe las rutas API."
@@ -381,7 +381,7 @@ try {
             Copy-Item $envExamplePath $envPath
             Write-OK ".env creado desde .env.example"
             Write-Host ""
-            Write-Host "  [!] [AVISO] Se creo .env desde .env.example." -ForegroundColor Yellow
+            Write-Host "  [AVISO] Se creo .env desde .env.example." -ForegroundColor Yellow
             Write-Host "  Revisa y ajusta los valores antes de continuar." -ForegroundColor Yellow
             Write-Host "  (especialmente JWT_SECRET, JWT_CLIENTE_SECRET, etc.)" -ForegroundColor Yellow
             Write-Host ""
@@ -409,7 +409,7 @@ try {
             if ($LASTEXITCODE -ne 0) { throw "pnpm install fallo" }
             Write-OK "Dependencias instaladas"
         } catch {
-            Write-Err "Fallo pnpm install: $_"
+            Write-Err ("Fallo pnpm install: " + $_)
             pause
             exit 1
         } finally {
@@ -428,13 +428,13 @@ try {
         $pgExitCode = $LASTEXITCODE
         if ($pgExitCode -ne 0) {
             Write-Warn "Salida de prisma generate:"
-            $pgOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
-            throw "prisma generate fallo (exit code: $pgExitCode)"
+            $pgOutput | ForEach-Object { Write-Host ("      " + $_) -ForegroundColor DarkGray }
+            throw ("prisma generate fallo (exit code: " + $pgExitCode + ")")
         }
         Write-OK "Prisma Client generado"
     } catch {
-        Write-Err "Fallo prisma generate: $_"
-        Write-Warn "Puedes ejecutarlo manualmente: cd backend && pnpm run db:generate"
+        Write-Err ("Fallo prisma generate: " + $_)
+        Write-Warn "Puedes ejecutarlo manualmente: cd backend; pnpm run db:generate"
     } finally {
         Pop-Location
     }
@@ -447,13 +447,13 @@ try {
         $dcOutput = docker compose -f $composeFile up -d 2>&1
         $dcExit = $LASTEXITCODE
         if ($dcExit -ne 0) {
-            Write-Err "docker compose fallo (exit code: $dcExit):"
-            $dcOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+            Write-Err ("docker compose fallo (exit code: " + $dcExit + "):")
+            $dcOutput | ForEach-Object { Write-Host ("      " + $_) -ForegroundColor Red }
             throw "docker compose up -d fallo"
         }
         Write-OK "Contenedores iniciados"
     } catch {
-        Write-Err "Fallo al levantar contenedores Docker: $_"
+        Write-Err ("Fallo al levantar contenedores Docker: " + $_)
         pause
         exit 1
     } finally {
@@ -488,18 +488,18 @@ try {
             $status = @()
             if (-not $dbReady) { $status += 'PostgreSQL' }
             if (-not $redisReady) { $status += 'Redis' }
-            Write-Host "   ...esperando $($status -join ', ') (intento $dockerAttempts de $maxDockerAttempts)" -ForegroundColor DarkGray
+            Write-Host ("   ...esperando " + ($status -join ', ') + " (intento " + $dockerAttempts + " de " + $maxDockerAttempts + ")") -ForegroundColor DarkGray
         }
     }
 
     if (-not $dbReady) {
-        Write-Err "PostgreSQL no se pudo conectar despues de $DOCKER_HEALTH_TIMEOUT segundos."
+        Write-Err ("PostgreSQL no se pudo conectar despues de " + $DOCKER_HEALTH_TIMEOUT + " segundos.")
         Write-Host "   Verifica: docker logs farmacy_postgres_dev" -ForegroundColor Yellow
         pause
         exit 1
     }
     if (-not $redisReady) {
-        Write-Err "Redis no se pudo conectar despues de $DOCKER_HEALTH_TIMEOUT segundos."
+        Write-Err ("Redis no se pudo conectar despues de " + $DOCKER_HEALTH_TIMEOUT + " segundos.")
         Write-Host "   Verifica: docker logs farmacy_redis_dev" -ForegroundColor Yellow
         pause
         exit 1
@@ -517,21 +517,21 @@ try {
         if ($mgExit -eq 0) {
             Write-OK "Migraciones ejecutadas"
         } else {
-            Write-Warn "migrate deploy fallo (exit code: $mgExit), intentando db push..."
-            $mgOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+            Write-Warn ("migrate deploy fallo (exit code: " + $mgExit + "), intentando db push...")
+            $mgOutput | ForEach-Object { Write-Host ("      " + $_) -ForegroundColor DarkGray }
             $pushOutput = npx prisma db push --schema=../database/prisma/schema.prisma 2>&1
             $pushExit = $LASTEXITCODE
             if ($pushExit -eq 0) {
                 Write-OK "Esquema aplicado via db push"
             } else {
-                Write-Warn "db push tambien fallo (exit code: $pushExit):"
-                $pushOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+                Write-Warn ("db push tambien fallo (exit code: " + $pushExit + "):")
+                $pushOutput | ForEach-Object { Write-Host ("      " + $_) -ForegroundColor Red }
                 Write-Warn "El backend podria fallar sin las migraciones"
             }
         }
         $env:DATABASE_URL = $prevDbUrl
     } catch {
-        Write-Warn "Error en migraciones: $_"
+        Write-Warn ("Error en migraciones: " + $_)
     } finally {
         Pop-Location
     }
@@ -545,11 +545,11 @@ try {
         if ($seedExit -eq 0) {
             Write-OK "Seeds ejecutados"
         } else {
-            Write-Warn "Seeds devolvieron codigo $seedExit (puede ser normal si la DB ya tiene datos):"
-            $seedOutput | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+            Write-Warn ("Seeds devolvieron codigo " + $seedExit + " (puede ser normal si la DB ya tiene datos):")
+            $seedOutput | ForEach-Object { Write-Host ("      " + $_) -ForegroundColor DarkGray }
         }
     } catch {
-        Write-Warn "Error al ejecutar seeds: $_"
+        Write-Warn ("Error al ejecutar seeds: " + $_)
     } finally {
         Pop-Location
     }
@@ -560,23 +560,23 @@ try {
         $pkgDir = Join-Path $ROOT $pkg
         $pkgModules = Join-Path $pkgDir 'node_modules'
         if (-not (Test-Path $pkgModules)) {
-            Write-Skip "$pkg/node_modules no encontrado. Ejecutando pnpm install..."
+            Write-Skip ($pkg + "/node_modules no encontrado. Ejecutando pnpm install...")
             try {
                 Push-Location $pkgDir
                 $installOut = pnpm install 2>&1
                 if ($LASTEXITCODE -ne 0) {
                     Write-Warn "Salida de pnpm install:"
-                    $installOut | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
-                    throw "pnpm install fallo en $pkg"
+                    $installOut | ForEach-Object { Write-Host ("      " + $_) -ForegroundColor Red }
+                    throw ("pnpm install fallo en " + $pkg)
                 }
-                Write-OK "Dependencias de $pkg instaladas"
+                Write-OK ("Dependencias de " + $pkg + " instaladas")
             } catch {
-                Write-Err "Fallo pnpm install en $pkg: $_"
+                Write-Err ("Fallo pnpm install en " + $pkg + ": " + $_)
             } finally {
                 Pop-Location
             }
         } else {
-            Write-OK "$pkg dependencias listas"
+            Write-OK ($pkg + " dependencias listas")
         }
     }
 
@@ -598,8 +598,8 @@ try {
         } -ArgumentList $frontendDir
         $script:BackendPID = $backendJob.Id
         $script:FrontendPID = $frontendJob.Id
-        Write-OK "  [Headless] Backend Job ID: $($backendJob.Id)"
-        Write-OK "  [Headless] Frontend Job ID: $($frontendJob.Id)"
+        Write-OK ("  [Headless] Backend Job ID: " + $backendJob.Id)
+        Write-OK ("  [Headless] Frontend Job ID: " + $frontendJob.Id)
     } else {
         # Modo normal: ventanas separadas
         # Intentar con pwsh.exe primero, fallback a powershell.exe
@@ -618,9 +618,9 @@ try {
             -WindowStyle Normal -PassThru
         $script:FrontendPID = $frontendProcess.Id
 
-        Write-Host "   Backend  -> PID: $($backendProcess.Id)" -ForegroundColor Green
-        Write-Host "   Frontend -> PID: $($frontendProcess.Id)" -ForegroundColor Green
-        Write-Host "   (Shell: $shellExe)" -ForegroundColor DarkGray
+        Write-Host ("   Backend  -> PID: " + $backendProcess.Id) -ForegroundColor Green
+        Write-Host ("   Frontend -> PID: " + $frontendProcess.Id) -ForegroundColor Green
+        Write-Host ("   (Shell: " + $shellExe + ")") -ForegroundColor DarkGray
     }
 
     # -- [10/10] Healthcheck --------------------------------------------
@@ -629,7 +629,7 @@ try {
     $healthOK = Start-HealthcheckLoop
 
     if (-not $healthOK) {
-        Write-Err "El backend no respondio despues de $HEALTHCHECK_TIMEOUT segundos."
+        Write-Err ("El backend no respondio despues de " + $HEALTHCHECK_TIMEOUT + " segundos.")
         Write-Host "   Verifica que no haya errores en la ventana del backend."
         Write-Host "   Timeout configurable en `$HEALTHCHECK_TIMEOUT en run.ps1"
         Write-Host ""
@@ -657,14 +657,14 @@ try {
     # -- Exito --------------------------------------------------
     Write-Host ""
     Write-Host "  +----------------------------------------------+" -ForegroundColor Cyan
-    Write-Host "  |  Farmacy iniciado correctamente!             |" -ForegroundColor Cyan
-    Write-Host "  |                                              |" -ForegroundColor Cyan
-    Write-Host "  |  Frontend: http://localhost:5173              |" -ForegroundColor Green
-    Write-Host "  |  Backend:  http://localhost:3000/api/v1      |" -ForegroundColor Green
-    Write-Host "  |  pgAdmin:  http://localhost:5050              |" -ForegroundColor Green
-    Write-Host "  |                                              |" -ForegroundColor Cyan
-    Write-Host "  |  Presiona Ctrl+C en esta ventana             |" -ForegroundColor Yellow
-    Write-Host "  |  para detener todo limpiamente.              |" -ForegroundColor Yellow
+    Write-Host ("  |  Farmacy iniciado correctamente!             |") -ForegroundColor Cyan
+    Write-Host ("  |                                              |") -ForegroundColor Cyan
+    Write-Host ("  |  Frontend: http://localhost:5173              |") -ForegroundColor Green
+    Write-Host ("  |  Backend:  http://localhost:3000/api/v1      |") -ForegroundColor Green
+    Write-Host ("  |  pgAdmin:  http://localhost:5050              |") -ForegroundColor Green
+    Write-Host ("  |                                              |") -ForegroundColor Cyan
+    Write-Host ("  |  Presiona Ctrl+C en esta ventana             |") -ForegroundColor Yellow
+    Write-Host ("  |  para detener todo limpiamente.              |") -ForegroundColor Yellow
     Write-Host "  +----------------------------------------------+" -ForegroundColor Cyan
     Write-Host ""
 
@@ -686,7 +686,7 @@ try {
             if ($backendAlive) { $backendState = $backendAlive.State }
             if ($frontendAlive) { $frontendState = $frontendAlive.State }
             if ($backendState -ne "Running" -and $frontendState -ne "Running") {
-                Write-Host "  Ambos jobs finalizaron ($backendState / $frontendState). Saliendo..." -ForegroundColor Yellow
+                Write-Host ("  Ambos jobs finalizaron (" + $backendState + " / " + $frontendState + "). Saliendo...") -ForegroundColor Yellow
                 break
             }
         }
@@ -715,7 +715,7 @@ try {
 
 } catch {
     Write-Host ""
-    Write-Err "Error inesperado: $_"
+    Write-Err ("Error inesperado: " + $_)
     Write-Host ""
     pause
     exit 1
