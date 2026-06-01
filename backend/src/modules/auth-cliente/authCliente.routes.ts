@@ -20,7 +20,8 @@ import { cache } from '../../config/redis'
 import { jwtCliente, jwtTemp } from '../../utils/jwt.utils'
 import { responder } from '../../utils/respuesta.utils'
 import { autenticarCliente, validarCuerpo, limitarLogin, limitarCreacion, limitarRegistro } from '../../middlewares/index'
-import { sendEmail, emailTemplates } from '../../config/mailer'
+import { emailTemplates } from '../../config/mailer'
+import { encolarEmail } from '../../jobs/queue'
 import { env } from '../../config/env'
 import { logger } from '../../utils/logger'
 
@@ -76,14 +77,14 @@ authClienteRouter.post(
         select: { id: true, nombre: true, email: true },
       })
 
-      // Enviar email de verificación (siempre que haya SMTP configurado)
+      // Enviar email de verificación (async, no bloquea la request)
       if (env.SMTP_HOST) {
         const url = `${env.FRONTEND_URL}/verificar-email?token=${token}`
-        sendEmail({
-          to: email,
-          subject: 'Verifica tu cuenta en Farmacy',
-          html: emailTemplates.verificarEmail(nombre, url),
-        })
+        encolarEmail(
+          email,
+          'Verifica tu cuenta en Farmacy',
+          emailTemplates.verificarEmail(nombre, url),
+        )
       }
 
       logger.info(`[AuthCliente] Nuevo registro: ${email}`)
@@ -197,11 +198,11 @@ authClienteRouter.post('/recuperar-password', limitarCreacion, async (req: Reque
     })
 
     const url = `${env.FRONTEND_URL}/reset-password?token=${token}`
-    sendEmail({
-      to: email,
-      subject: 'Restablece tu contraseña — Farmacy',
-      html: emailTemplates.resetPassword(cliente.nombre, url),
-    })
+    encolarEmail(
+      email,
+      'Restablece tu contraseña — Farmacy',
+      emailTemplates.resetPassword(cliente.nombre, url),
+    )
 
     return responder.ok(res, null, 'Si el email existe, recibirás un correo')
   } catch (err) {
@@ -515,7 +516,7 @@ authClienteRouter.post('/pedidos/:id/devolucion-request', autenticarCliente, lim
     const html = `<p>Cliente ${venta.cliente?.nombre} ${venta.cliente?.apellido} solicita devolución para la venta #${venta.numero}</p>
       <p>Motivo: ${motivo}</p>
       <p>Venta ID: ${venta.id} · Total: ${venta.total}</p>`
-    await sendEmail({ to: soporteEmail, subject: `Solicitud de devolución - Venta ${venta.numero}`, html })
+    await encolarEmail(soporteEmail, `Solicitud de devolución - Venta ${venta.numero}`, html)
 
     return responder.ok(res, null, 'Solicitud de devolución enviada. Nuestro equipo te contactará.')
   } catch (err) { return responder.serverError(res, err) }

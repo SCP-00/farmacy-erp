@@ -35,6 +35,10 @@ vi.mock('../config/mailer', () => ({
   emailTemplates: {},
 }))
 
+vi.mock('../jobs/queue', () => ({
+  encolarEmail: vi.fn(),
+}))
+
 vi.mock('node-cron', () => ({
   default: { schedule: vi.fn() },
   schedule: vi.fn(),
@@ -185,7 +189,7 @@ describe('verificarVencimientos (a través del CRON)', () => {
   })
 
   it('envía email cuando hay lotes vencidos o críticos', async () => {
-    const { sendEmail } = await import('../config/mailer')
+    const { encolarEmail } = await import('../jobs/queue')
 
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-01T12:00:00Z'))
@@ -207,18 +211,17 @@ describe('verificarVencimientos (a través del CRON)', () => {
 
     await ejecutarCron()
 
-    expect(sendEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: 'admin@farmacy.co',
-        subject: expect.stringContaining('crítico'),
-      })
+    expect(encolarEmail).toHaveBeenCalledWith(
+      'admin@farmacy.co',
+      expect.stringContaining('crítico'),
+      expect.any(String),
     )
 
     vi.useRealTimers()
   })
 
   it('no envía email si solo hay lotes próximos a vencer', async () => {
-    const { sendEmail } = await import('../config/mailer')
+    const { encolarEmail } = await import('../jobs/queue')
 
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-06-01T12:00:00Z'))
@@ -238,7 +241,7 @@ describe('verificarVencimientos (a través del CRON)', () => {
 
     await ejecutarCron()
 
-    expect(sendEmail).not.toHaveBeenCalled()
+    expect(encolarEmail).not.toHaveBeenCalled()
 
     vi.useRealTimers()
   })

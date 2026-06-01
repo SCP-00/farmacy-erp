@@ -76,6 +76,18 @@ export const colas = {
   }),
 }
 
+/** Añadir un email a la cola de emails (fire & forget).
+ *  No espera a que se envíe — retorna inmediatamente.
+ *  Útil para enviar correos sin bloquear la request HTTP. */
+export async function encolarEmail(to: string, subject: string, html: string): Promise<void> {
+  try {
+    await colas.emails.add('enviar-email', { to, subject, html })
+    logger.info(`[Queue] Email encolado para ${to} — asunto: "${subject.slice(0, 60)}"`)
+  } catch (err) {
+    logger.error(`[Queue] Error al encolar email para ${to}: ${(err as Error).message}`)
+  }
+}
+
 // ── Workers ───────────────────────────────────────────────
 function iniciarWorkerCSV(): Worker<CSVExportPayload> {
   const worker = new Worker<CSVExportPayload>(
@@ -148,10 +160,42 @@ export function iniciarWorkers(): void {
 
   workers = [
     iniciarWorkerCSV(),
-    // Futuro: worker de emails
+    iniciarWorkerEmails(),
   ]
 
   logger.info(`[Queue] ${workers.length} worker(s) iniciados`)
+}
+
+// ── Email Worker ──────────────────────────────────────────
+export function iniciarWorkerEmails(): Worker<EmailPayload> {
+  const worker = new Worker<EmailPayload>(
+    'emails',
+    async (job: Job<EmailPayload>) => {
+      const { to, subject, html } = job.data
+      const { procesarEmail } = await import('./email.job')
+      await procesarEmail({ to, subject, html })
+    },
+    {
+      connection: crearConexion(),
+      concurrency: 3,
+    }
+  )
+
+  worker.on('completed', (job) => {
+    logger.info(`[Queue] ✅ Email enviado — job ${job.id}`)
+  })
+
+  worker.on('failed', (job, err) => {
+    if (job) {
+      logger.error(`[Queue] ❌ Email falló — job ${job.id}: ${err.message}`)
+    }
+  })
+
+  worker.on('error', (err) => {
+    logger.error(`[Queue] Email worker error: ${err.message}`)
+  })
+
+  return worker
 }
 
 export async function detenerWorkers(): Promise<void> {

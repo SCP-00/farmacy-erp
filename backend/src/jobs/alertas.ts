@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import { prisma } from '../config/database'
-import { sendEmail, emailTemplates } from '../config/mailer'
+import { emailTemplates } from '../config/mailer'
+import { encolarEmail } from './queue'
 import { logger } from '../utils/logger'
 
 // Cada día a las 7:00 AM hora Colombia
@@ -122,11 +123,11 @@ async function verificarVencimientos(): Promise<void> {
         : `⚠️ Farmacy: ${criticos} lotes en estado crítico`
 
       for (const admin of admins) {
-        sendEmail({
-          to: admin.email,
-          subject: asunto,
-          html: `<pre style="font-family:sans-serif;padding:20px">${resumen}</pre>`,
-        })
+        encolarEmail(
+          admin.email,
+          asunto,
+          `<pre style="font-family:sans-serif;padding:20px">${resumen}</pre>`,
+        )
       }
     }
   } catch (err) {
