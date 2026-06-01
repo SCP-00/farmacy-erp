@@ -36,15 +36,33 @@ e2e/results/
 test-screenshots/
 test-e2e-*.log
 
-# ── Tools (binarios grandes, no el script) ───────────────────
+# ── AI-agent files (local only) ──────────────────────────────
+AGENTS.md
+BUFFY_CONTEXT.md
+plan.md
+.opencode/
 .agents/
 skills-lock.json
+config.json
+
+# ── Dev-only scripts (local only) ───────────────────────────
+demo.ps1
+scripts/security-pentest*.sh
+scripts/security-pentest*.ps1
+scripts/descargar-zap.ps1
+
+# ── Tools (binarios grandes) ─────────────────────────────────
 scripts/tools/ZAP/
 scripts/tools/*.tar.gz
 scripts/tools/*.zip
-sessionZAP*
 
-# ── ZAP session files ────────────────────────────────────────
+# ── Testing artifacts (local only) ───────────────────────────
+load-tests/
+test-screenshots/
+e2e/reports/
+e2e/results/
+test-e2e-*.log
+sessionZAP*
 session*
 *.session
 
