@@ -68,6 +68,18 @@ services:
       postgres:
         condition: service_healthy
 
+  # ── Mailpit (SMTP local para pruebas de email) ─────────
+  # Atrapa todos los correos enviados en desarrollo.
+  # Web UI: http://localhost:8025
+  # SMTP: localhost:1025 (sin autenticación)
+  mailpit:
+    image: axllent/mailpit:v1.22
+    container_name: farmacy_mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP (backend conecta aquí)
+      - "8025:8025"   # Web UI (abrir en navegador)
+
 volumes:
   farmacy_pg_data:
     name: farmacy_pg_data_dev
