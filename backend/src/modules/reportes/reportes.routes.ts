@@ -9,28 +9,35 @@ reportesRouter.get('/ventas', autenticar, autorizar('ADMINISTRADOR'),
   async (req: Request, res: Response) => {
     const { desde, hasta, sucursalId } = req.query as any
     try {
-      const where: any = { estado: 'PAGADO' }
+      const { estado } = req.query as any
+      const where: any = {}
       if (desde) where.creadoEn = { gte: new Date(desde) }
       if (hasta) where.creadoEn = { ...where.creadoEn, lte: new Date(hasta) }
       if (sucursalId) where.sucursalId = parseInt(sucursalId)
+      if (estado && ['PAGADO', 'PENDIENTE', 'COMPLETADO', 'CANCELADO', 'DEVUELTO'].includes(estado)) {
+        where.estado = estado
+      }
 
-      const [totales, porDia, porMetodo] = await Promise.all([
+      // ── Consultas en paralelo ──
+      const desdeDate = desde ? new Date(desde) : new Date('2000-01-01')
+      const hastaDate = hasta ? new Date(hasta) : new Date('2100-01-01')
+
+      const [totales, porDia, porMetodo, ventas] = await Promise.all([
         prisma.venta.aggregate({
           where,
           _sum:   { total: true, descuento: true },
           _count: { id: true },
           _avg:   { total: true },
         }),
-        // Usar $queryRawUnsafe para agrupar por fecha (truncando timestamp) ya que
-        // Prisma groupBy no soporta DATE() ni transformaciones en las columnas de agrupación
         prisma.$queryRawUnsafe<Array<{ fecha: string; total: number; count: bigint }>>(
           `SELECT DATE(creado_en) as fecha, SUM(total) as total, COUNT(*) as count
            FROM venta
-           WHERE creado_en >= $1 AND creado_en <= $2 AND estado = 'PAGADO'
+           WHERE creado_en >= $1 AND creado_en <= $2${where.estado ? ` AND estado = $3` : ''}
            GROUP BY DATE(creado_en)
            ORDER BY fecha ASC`,
-          desde ? new Date(desde) : new Date('2000-01-01'),
-          hasta ? new Date(hasta) : new Date('2100-01-01')
+          desdeDate,
+          hastaDate,
+          ...(where.estado ? [where.estado] : [])
         ).catch(() => []),
         prisma.venta.groupBy({
           by: ['metodoPago'],
@@ -38,9 +45,53 @@ reportesRouter.get('/ventas', autenticar, autorizar('ADMINISTRADOR'),
           _sum:   { total: true },
           _count: { id: true },
         }),
+        prisma.venta.findMany({
+          where,
+          orderBy: { creadoEn: 'desc' },
+          include: {
+            cliente: { select: { nombre: true, apellido: true, email: true } },
+          },
+        }),
       ])
 
-      return responder.ok(res, { totales, porDia, porMetodo })
+      const ventasMapeadas = ventas.map(v => ({
+        id: v.id,
+        factura: `F-${String(v.numero).padStart(5, '0')}`,
+        fecha: v.creadoEn,
+        cliente: v.cliente,
+        metodoPago: v.metodoPago,
+        total: v.total,
+        estado: v.estado,
+      }))
+
+      // KPIs: facturación solo de ventas PAGADO
+      const wherePagado = { ...where, estado: 'PAGADO' }
+      const totalesPagados = await prisma.venta.aggregate({
+        where: wherePagado,
+        _sum: { total: true },
+        _count: { id: true },
+        _avg: { total: true },
+      })
+      const clientesUnicos = await prisma.venta.findMany({
+        where: { ...where, clienteId: { not: null } },
+        select: { clienteId: true },
+        distinct: ['clienteId'],
+      })
+
+      return responder.ok(res, {
+        totales: {
+          _sum: { total: totalesPagados._sum.total, descuento: totales._sum.descuento },
+          _count: { id: totalesPagados._count.id },
+          _avg: { total: totalesPagados._avg?.total ?? 0 },
+        },
+        porDia,
+        porMetodo,
+        ventas: ventasMapeadas,
+        totalVentas: ventasMapeadas.length,
+        montoTotal: Number(totalesPagados._sum.total ?? 0),
+        clientesUnicos: clientesUnicos.length,
+        sucursales: await prisma.sucursal.findMany({ select: { id: true, nombre: true } }),
+      })
     } catch (err) { return responder.serverError(res, err) }
   }
 )

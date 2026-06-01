@@ -575,8 +575,10 @@ function Checkout() {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="label">Nombre completo <span className="text-red-500">*</span></label>
+                    <label htmlFor="checkout-nombre" className="label">Nombre completo <span className="text-red-500">*</span></label>
                     <input
+                      id="checkout-nombre"
+                      name="nombre"
                       value={datos.nombre}
                       onChange={e => handleChange('nombre', e.target.value)}
                       onBlur={() => handleBlur('nombre')}
@@ -589,8 +591,11 @@ function Checkout() {
                     <InputError error={erroresVisibles.nombre || errores.nombre} />
                   </div>
                   <div>
-                    <label className="label">Correo electronico <span className="text-red-500">*</span></label>
+                    <label htmlFor="checkout-email" className="label">Correo electronico <span className="text-red-500">*</span></label>
                     <input
+                      id="checkout-email"
+                      name="email"
+                      type="email"
                       value={datos.email}
                       onChange={e => handleChange('email', e.target.value)}
                       onBlur={() => handleBlur('email')}
@@ -602,8 +607,11 @@ function Checkout() {
                     <InputError error={erroresVisibles.email || errores.email} />
                   </div>
                   <div>
-                    <label className="label">Telefono <span className="text-red-500">*</span></label>
+                    <label htmlFor="checkout-telefono" className="label">Telefono <span className="text-red-500">*</span></label>
                     <input
+                      id="checkout-telefono"
+                      name="telefono"
+                      type="tel"
                       value={datos.telefono}
                       onChange={e => handleChange('telefono', e.target.value)}
                       onBlur={() => handleBlur('telefono')}
@@ -615,8 +623,10 @@ function Checkout() {
                     <InputError error={erroresVisibles.telefono || errores.telefono} />
                   </div>
                   <div>
-                    <label className="label">Direccion de envio <span className="text-red-500">*</span></label>
+                    <label htmlFor="checkout-direccion" className="label">Direccion de envio <span className="text-red-500">*</span></label>
                     <input
+                      id="checkout-direccion"
+                      name="direccion"
                       value={datos.direccion}
                       onChange={e => handleChange('direccion', e.target.value)}
                       onBlur={() => handleBlur('direccion')}
@@ -716,6 +726,8 @@ function Checkout() {
             <h3 className="font-semibold text-slate-800 flex items-center gap-2"><Tag size={16} /> Codigo de descuento</h3>
             <div className="flex gap-2">
               <input
+                id="checkout-codigo"
+                name="codigo"
                 value={codigo}
                 onChange={e => setCodigo(e.target.value)}
                 placeholder="Ej: FARMACY10"

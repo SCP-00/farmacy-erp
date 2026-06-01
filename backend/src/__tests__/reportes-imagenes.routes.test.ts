@@ -137,25 +137,52 @@ describe('Reportes Routes - GET /reportes/ventas', () => {
     expect(res.status).toBe(403)
   })
 
-  it('retorna reporte de ventas con totales, por día y por método', async () => {
-    mockPrisma.venta.aggregate.mockResolvedValue({ _sum: { total: 1000000, descuento: 50000 }, _count: { id: 20 }, _avg: { total: 50000 } })
+  it('retorna reporte de ventas con totales, por día, por método y lista de ventas', async () => {
+    mockPrisma.venta.aggregate
+      .mockResolvedValueOnce({ _sum: { total: 1000000, descuento: 50000 }, _count: { id: 20 }, _avg: { total: 50000 } })
+      .mockResolvedValueOnce({ _sum: { total: 1000000 }, _count: { id: 20 }, _avg: { total: 50000 } })
     mockPrisma.venta.groupBy
-      .mockResolvedValueOnce([{ creadoEn: new Date(), _sum: { total: 500000 }, _count: { id: 10 } }])
       .mockResolvedValueOnce([{ metodoPago: 'EFECTIVO', _sum: { total: 600000 }, _count: { id: 12 } }])
+    mockPrisma.venta.findMany
+      .mockResolvedValueOnce([{ id: 'v-1', numero: 1, creadoEn: new Date(), total: 50000, estado: 'PAGADO', metodoPago: 'EFECTIVO', cliente: { nombre: 'Juan', apellido: 'Pérez' } }])
+      .mockResolvedValueOnce([{ clienteId: 'c-1' }])
+    mockPrisma.sucursal.findMany.mockResolvedValue([{ id: 1, nombre: 'Sede Centro' }])
     const res = await supertest(app).get(`${apiPrefix}/reportes/ventas`)
       .set('Authorization', 'Bearer valid-admin-token')
     expect(res.status).toBe(200)
     expect(res.body.data.totales).toBeDefined()
     expect(res.body.data.porDia).toBeDefined()
     expect(res.body.data.porMetodo).toBeDefined()
+    expect(res.body.data.ventas).toBeDefined()
+    expect(res.body.data.ventas).toHaveLength(1)
+    expect(res.body.data.clientesUnicos).toBe(1)
+    expect(res.body.data.sucursales).toBeDefined()
   })
 
   it('filtra por fechas', async () => {
-    mockPrisma.venta.aggregate.mockResolvedValue({ _sum: { total: 0, descuento: 0 }, _count: { id: 0 }, _avg: { total: 0 } })
-    mockPrisma.venta.groupBy.mockResolvedValue([]).mockResolvedValue([])
+    mockPrisma.venta.aggregate
+      .mockResolvedValue({ _sum: { total: 0, descuento: 0 }, _count: { id: 0 }, _avg: { total: 0 } })
+    mockPrisma.venta.groupBy.mockResolvedValue([])
+    mockPrisma.venta.findMany.mockResolvedValue([]).mockResolvedValue([])
+    mockPrisma.sucursal.findMany.mockResolvedValue([])
     const res = await supertest(app).get(`${apiPrefix}/reportes/ventas?desde=2026-01-01&hasta=2026-12-31`)
       .set('Authorization', 'Bearer valid-admin-token')
     expect(res.status).toBe(200)
+  })
+
+  it('filtra por estado PENDIENTE', async () => {
+    mockPrisma.venta.aggregate
+      .mockResolvedValue({ _sum: { total: 12000, descuento: 0 }, _count: { id: 1 }, _avg: { total: 12000 } })
+    mockPrisma.venta.groupBy.mockResolvedValue([])
+    mockPrisma.venta.findMany
+      .mockResolvedValueOnce([{ id: 'v-pend', numero: 99, creadoEn: new Date(), total: 12000, estado: 'PENDIENTE', metodoPago: 'EFECTIVO', cliente: { nombre: 'Test', apellido: 'User' } }])
+      .mockResolvedValueOnce([])
+    mockPrisma.sucursal.findMany.mockResolvedValue([])
+    const res = await supertest(app).get(`${apiPrefix}/reportes/ventas?estado=PENDIENTE`)
+      .set('Authorization', 'Bearer valid-admin-token')
+    expect(res.status).toBe(200)
+    expect(res.body.data.ventas).toHaveLength(1)
+    expect(res.body.data.ventas[0].estado).toBe('PENDIENTE')
   })
 
   it('maneja error interno', async () => {
