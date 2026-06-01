@@ -5,6 +5,17 @@ import { autenticar, autorizar } from '../../middlewares/index'
 
 export const reportesRouter: Router = Router()
 
+// Helper: si el string es solo fecha (YYYY-MM-DD), ajustar a fin de día (23:59:59.999Z)
+// Si incluye hora, usar tal cual
+function finDeDia(dateStr: string): Date {
+  const d = new Date(dateStr)
+  // Solo ajustar si no tiene componente de hora (solo YYYY-MM-DD)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr.trim())) {
+    d.setUTCHours(23, 59, 59, 999)
+  }
+  return d
+}
+
 reportesRouter.get('/ventas', autenticar, autorizar('ADMINISTRADOR'),
   async (req: Request, res: Response) => {
     const { desde, hasta, sucursalId } = req.query as any
@@ -12,7 +23,7 @@ reportesRouter.get('/ventas', autenticar, autorizar('ADMINISTRADOR'),
       const { estado } = req.query as any
       const where: any = {}
       if (desde) where.creadoEn = { gte: new Date(desde) }
-      if (hasta) where.creadoEn = { ...where.creadoEn, lte: new Date(hasta) }
+      if (hasta) where.creadoEn = { ...where.creadoEn, lte: finDeDia(hasta) }
       if (sucursalId) where.sucursalId = parseInt(sucursalId)
       if (estado && ['PAGADO', 'PENDIENTE', 'COMPLETADO', 'CANCELADO', 'DEVUELTO'].includes(estado)) {
         where.estado = estado
@@ -20,7 +31,7 @@ reportesRouter.get('/ventas', autenticar, autorizar('ADMINISTRADOR'),
 
       // ── Consultas en paralelo ──
       const desdeDate = desde ? new Date(desde) : new Date('2000-01-01')
-      const hastaDate = hasta ? new Date(hasta) : new Date('2100-01-01')
+      const hastaDate = hasta ? finDeDia(hasta) : new Date('2100-01-01')
 
       const [totales, porDia, porMetodo, ventas] = await Promise.all([
         prisma.venta.aggregate({
@@ -136,7 +147,7 @@ reportesRouter.get('/compras', autenticar, autorizar('ADMINISTRADOR'),
     try {
       const where: any = {}
       if (desde) where.creadoEn = { gte: new Date(desde) }
-      if (hasta) where.creadoEn = { ...where.creadoEn, lte: new Date(hasta) }
+      if (hasta) where.creadoEn = { ...where.creadoEn, lte: finDeDia(hasta) }
 
       const [totales, porMes, porProveedor] = await Promise.all([
         prisma.ordenCompra.aggregate({
@@ -153,7 +164,7 @@ reportesRouter.get('/compras', autenticar, autorizar('ADMINISTRADOR'),
            GROUP BY TO_CHAR(creado_en, 'YYYY-MM')
            ORDER BY mes ASC`,
           desde ? new Date(desde) : null,
-          hasta ? new Date(hasta) : null
+          hasta ? finDeDia(hasta) : null
         ).catch(() => []),
         prisma.ordenCompra.groupBy({
           by: ['proveedorId'],
@@ -184,7 +195,7 @@ reportesRouter.get('/:tipo/csv', autenticar, autorizar('ADMINISTRADOR'),
         csv = 'Fecha,Numero,Cliente,Total,Estado,MetodoPago\n'
         const where: any = {}
         if (desde) where.creadoEn = { gte: new Date(desde) }
-        if (hasta) where.creadoEn = { ...where.creadoEn, lte: new Date(hasta) }
+        if (hasta) where.creadoEn = { ...where.creadoEn, lte: finDeDia(hasta) }
 
         const ventas = await prisma.venta.findMany({
           where,
@@ -204,7 +215,7 @@ reportesRouter.get('/:tipo/csv', autenticar, autorizar('ADMINISTRADOR'),
         csv = 'Fecha,Proveedor,Total,Estado\n'
         const where: any = {}
         if (desde) where.creadoEn = { gte: new Date(desde) }
-        if (hasta) where.creadoEn = { ...where.creadoEn, lte: new Date(hasta) }
+        if (hasta) where.creadoEn = { ...where.creadoEn, lte: finDeDia(hasta) }
 
         const ordenes = await prisma.ordenCompra.findMany({
           where,
