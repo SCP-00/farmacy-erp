@@ -9,7 +9,7 @@ import toast from 'react-hot-toast'
 import { METODO_PAGO_LABEL } from '@/config/constants'
 import InteractionAlertModal from '@/components/shared/InteractionAlertModal'
 
-type MetodoPago = 'EFECTIVO' | 'WOMPI' | 'STRIPE' | 'MERCADOPAGO'
+type MetodoPago = 'EFECTIVO' | 'WOMPI' | 'STRIPE' | 'MERCADOPAGO' | 'TRANSFERENCIA'
 
 interface MetodoInfo {
   id: MetodoPago
@@ -25,6 +25,7 @@ const METODOS: MetodoInfo[] = [
   { id: 'WOMPI', label: 'Wompi', icon: <Building2 className="w-6 h-6" />, color: 'text-purple-700', bgColor: 'bg-purple-50 border-purple-200 hover:border-purple-400', description: 'PSE, Nequi, tarjetas debito/credito', features: ['Pago con PSE', 'Nequi', 'Tarjetas debito y credito', 'Sin costo adicional'] },
   { id: 'STRIPE', label: 'Stripe', icon: <CreditCard className="w-6 h-6" />, color: 'text-indigo-700', bgColor: 'bg-indigo-50 border-indigo-200 hover:border-indigo-400', description: 'Tarjetas internacionales', features: ['Visa, Mastercard, Amex', 'Pago internacional', '3D Secure', 'Moneda local COP'] },
   { id: 'MERCADOPAGO', label: 'Mercado Pago', icon: <Wallet className="w-6 h-6" />, color: 'text-blue-700', bgColor: 'bg-blue-50 border-blue-200 hover:border-blue-400', description: 'Cuenta Mercado Pago', features: ['Saldo Mercado Pago', 'Tarjetas vinculadas', 'Pago en cuotas', 'QR interoperable'] },
+  { id: 'TRANSFERENCIA', label: 'Transferencia', icon: <Building2 className="w-6 h-6" />, color: 'text-sky-700', bgColor: 'bg-sky-50 border-sky-200 hover:border-sky-400', description: 'Nequi, Daviplata, Bancolombia', features: ['Nequi', 'Daviplata', 'Bancolombia', 'Sin recargo'] },
   { id: 'EFECTIVO', label: 'Efectivo', icon: <Banknote className="w-6 h-6" />, color: 'text-emerald-700', bgColor: 'bg-emerald-50 border-emerald-200 hover:border-emerald-400', description: 'Pago contra entrega', features: ['Paga al recibir', 'Sin necesidad de tarjeta', 'Efectivo o transferencia', 'Valido en Bogota'] },
 ]
 

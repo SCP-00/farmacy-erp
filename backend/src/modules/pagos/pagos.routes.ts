@@ -463,6 +463,86 @@ pagosRouter.post('/mercadopago/webhook', verificarIpWebhook, limitarWebhook, asy
   return res.sendStatus(200)
 })
 
+// ── TRANSFERENCIA (Nequi / Daviplata / Bancolombia) ───────
+// Schema de validación para registro de pago por transferencia
+const transferenciaSchema = z.object({
+  ventaId: z.string().uuid('ID de venta inválido'),
+  bancoOrigen: z.string().min(1, 'Banco de origen requerido').optional(),
+  numeroReferencia: z.string().min(1, 'Número de referencia requerido').optional(),
+})
+
+pagosRouter.post('/transferencia/registrar', autenticar, autorizar('ADMINISTRADOR','FARMACEUTA'), async (req: Request, res: Response) => {
+  const parsed = transferenciaSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return responder.error(res, 'Datos inválidos: ' + parsed.error.errors.map(e => e.message).join(', '), 400)
+  }
+
+  const { ventaId, bancoOrigen, numeroReferencia } = parsed.data
+
+  try {
+    const venta = await prisma.venta.findUnique({ where: { id: ventaId } })
+    if (!venta) return responder.noEncontrado(res, 'Venta')
+    if (venta.estado === 'PAGADO') return responder.error(res, 'Esta venta ya fue pagada', 409)
+
+    // Verificar caja abierta
+    const cajaAbierta = await prisma.caja.findFirst({
+      where: { empleadoId: req.empleado!.id, cerradaEn: null },
+    })
+    if (!cajaAbierta) {
+      return responder.error(res, 'No tienes una caja abierta', 400)
+    }
+
+    // Buscar o crear transacción
+    const txExistente = await prisma.pagoTransaccion.findFirst({
+      where: { ventaId, pasarela: 'TRANSFERENCIA' },
+      orderBy: { creadoEn: 'desc' },
+    })
+
+    const totalVenta = Number(venta.total)
+
+    if (txExistente) {
+      await prisma.pagoTransaccion.update({
+        where: { id: txExistente.id },
+        data: {
+          estado: 'APROBADO',
+          respuestaPasarela: {
+            metodo: 'TRANSFERENCIA',
+            bancoOrigen,
+            numeroReferencia,
+            registradoPor: req.empleado!.id,
+            cajaId: cajaAbierta.id,
+          },
+        },
+      })
+    } else {
+      await prisma.pagoTransaccion.create({
+        data: {
+          ventaId,
+          pasarela: 'TRANSFERENCIA',
+          referenciaExterna: `TRF-${venta.numero}-${Date.now()}`,
+          monto: totalVenta,
+          moneda: 'COP',
+          estado: 'APROBADO',
+          respuestaPasarela: {
+            metodo: 'TRANSFERENCIA',
+            bancoOrigen,
+            numeroReferencia,
+            registradoPor: req.empleado!.id,
+            cajaId: cajaAbierta.id,
+          },
+        },
+      })
+    }
+
+    await prisma.venta.update({
+      where: { id: ventaId },
+      data: { estado: 'PAGADO', cajaId: cajaAbierta.id },
+    })
+
+    return responder.creado(res, { ventaId, monto: totalVenta }, 'Pago por transferencia registrado exitosamente')
+  } catch (err) { return responder.serverError(res, err) }
+})
+
 // ── EFECTIVO (POS) ────────────────────────────────────────
 // Schema de validación para registro de pago en efectivo
 const efectivoRegistroSchema = z.object({

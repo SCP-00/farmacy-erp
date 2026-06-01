@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express'
 import { prisma } from '../../config/database'
 import { responder } from '../../utils/respuesta.utils'
 import { autenticar, autorizar } from '../../middlewares/index'
+import { redis } from '../../config/redis'
+import { logger } from '../../utils/logger'
 
 export const reportesRouter: Router = Router()
 
@@ -179,7 +181,31 @@ reportesRouter.get('/compras', autenticar, autorizar('ADMINISTRADOR'),
   }
 )
 
-// ── GET /:tipo/csv — Exportar reporte como CSV ──────────
+// ── GET /csv/:jobId — Descargar CSV generado vía BullMQ ───
+// El CSV fue generado por el worker de exportación y guardado en Redis
+reportesRouter.get('/csv/:jobId', autenticar, autorizar('ADMINISTRADOR'),
+  async (req: Request, res: Response) => {
+    const { jobId } = req.params
+
+    try {
+      const redisKey = `csv:${jobId}`
+      const csv = await redis.get(redisKey)
+
+      if (!csv) {
+        return responder.noEncontrado(res, 'CSV no encontrado o expirado. Genera un nuevo reporte.')
+      }
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="reporte-${jobId}.csv"`)
+      return res.send(csv)
+    } catch (err) {
+      logger.error(`[CSV Download] Error leyendo job ${jobId} de Redis:`, err)
+      return responder.serverError(res, err)
+    }
+  }
+)
+
+// ── GET /:tipo/csv — Exportar reporte como CSV (síncrono) ──
 reportesRouter.get('/:tipo/csv', autenticar, autorizar('ADMINISTRADOR'),
   async (req: Request, res: Response) => {
     const { tipo } = req.params
