@@ -18,6 +18,7 @@ Guía rápida para desarrolladores IA y humanos que trabajan en este proyecto.
 | pgAdmin | 5050 | `farmacy_pgadmin` (admin@farmacy.co / admin) |
 | Backend (Express) | 3000 | Corre en host via nodemon |
 | Frontend (Vite) | 5173 | Proxy `/api` → 127.0.0.1:3000 |
+| Mailpit (SMTP local) | 1025 / 8025 | `farmacy_mailpit` — Captura correos en desarrollo. Web UI en :8025 |
 
 ## Prisma + database (Colombian INVIMA/CUM Integration)
 - Schema: `database/prisma/schema.prisma`
@@ -46,10 +47,94 @@ Guía rápida para desarrolladores IA y humanos que trabajan en este proyecto.
 ## Variables de entorno esenciales
 - `DATABASE_URL` — PostgreSQL (requerida)
 - `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_CLIENTE_SECRET` — mínimo 32 caracteres cada una
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` — Email/SMTP (opcional, ver sección de emails abajo)
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — OAuth social (opcional)
 - `WOMPI_*` — Wompi (opcional para sandbox)
 - `STRIPE_*` — Stripe (opcional)
 - `MERCADOPAGO_*` — MercadoPago (opcional)
+
+## 📧 Sistema de correos electrónicos
+
+El proyecto tiene un sistema de emails de 3 capas que funciona en desarrollo y producción:
+
+### 1. Mailpit (SMTP local — desarrollo)
+- **Propósito:** Capturar correos localmente sin enviarlos a destinatarios reales
+- **Acceso:** Web UI en http://localhost:8025
+- **SMTP:** `localhost:1025` (sin autenticación)
+- **Docker:** Imagen `axllent/mailpit:v1.22`, contenedor `farmacy_mailpit`
+- **Puertos:** `1025` (SMTP) + `8025` (Web UI)
+- **Uso:** Ideal para desarrollo cuando no hay SMTP real configurado. Todos los correos se ven en la interfaz web.
+
+### 2. Brevo (SMTP real — recomendado para pruebas con correos reales)
+- **Propósito:** Enviar correos a destinatarios reales desde desarrollo
+- **Registro:** https://www.brevo.com (gratuito, 300 emails/día, no expira)
+- **Configuración en `.env`:**
+  ```env
+  SMTP_HOST=smtp-relay.brevo.com
+  SMTP_PORT=587
+  SMTP_USER=tu_usuario_smtp@brevo.com
+  SMTP_PASS=tu_clave_smtp_de_brevo
+  ```
+- **Alternativa:** Resend (https://resend.com, 100 emails/día, gratis permanente)
+
+### 3. Auto-verify (modo desarrollo)
+Cuando `NODE_ENV=development`, el backend **auto-verifica los emails automáticamente** tanto al registrarse como al iniciar sesión. Esto significa:
+- Los usuarios pueden registrarse y **loguearse inmediatamente** sin esperar el email de verificación
+- El email de verificación se sigue enviando (si hay SMTP configurado) por si se quiere probar el flujo
+- En **producción** (`NODE_ENV=production`), la verificación por email es obligatoria (seguridad)
+
+### Cómo funciona el envío (`backend/src/config/mailer.ts`)
+
+```typescript
+// La autenticación SMTP es condicional:
+// - Si SMTP_USER está configurado → usa auth (Brevo, Gmail, etc.)
+// - Si no → usa ignoreTLS (Mailpit local)
+const transporter = nodemailer.createTransport({
+  host: env.SMTP_HOST,
+  port: parseInt(env.SMTP_PORT),
+  ...(env.SMTP_USER
+    ? { auth: { user: env.SMTP_USER, pass: env.SMTP_PASS } }
+    : { ignoreTLS: true }),
+})
+```
+
+### Prioridad de configuración (carga de `.env`)
+
+El archivo `backend/src/config/env.ts` carga los `.env` en este orden:
+1. `.env` raíz del proyecto (base)
+2. `backend/.env` con `override: true` (sobrescribe)
+
+Esto permite tener configuraciones diferentes para el backend sin modificar el `.env` raíz.
+
+### Tipos de correos que se envían
+
+| Tipo | Template | Disparador |
+|---|---|---|
+| Verificación de email | `emailTemplates.verificarEmail()` | Registro de nuevo cliente |
+| Restablecer contraseña | `emailTemplates.resetPassword()` | Solicitud de recuperación |
+| Confirmación de compra | `emailTemplates.confirmacionCompra()` | Compra B2C exitosa |
+| Alerta stock mínimo | `emailTemplates.alertaStockMinimo()` | Job programado de inventario |
+| Devolución (soporte) | HTML directo | Cliente solicita devolución |
+
+### Limpiar rate limit de registro
+
+Si haces muchas pruebas de registro y el rate limit (5/hora) te bloquea:
+```powershell
+docker exec farmacy_redis_dev redis-cli flushall
+```
+
+### Resumen de flujo
+
+```
+Usuario se registra
+  → Cuenta creada con emailVerificado=true (dev) / false (prod)
+  → Si hay SMTP configurado → email de verificación enviado
+  → Mailpit captura el email (si apunta a localhost:1025)
+  → Brevo entrega el email (si apunta a smtp-relay.brevo.com)
+  → Usuario puede loguear inmediatamente (dev) o tras verificar (prod)
+```
+
+---
 
 ## Tech stack
 - **Runtime:** Node.js v24.15.0 + **pnpm v11.2.2** (único gestor de paquetes — no usar npm ni yarn)
