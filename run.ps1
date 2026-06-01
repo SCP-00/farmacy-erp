@@ -28,10 +28,12 @@
 # Cambia a $true si ejecutas en SSH/WSL/Codespaces (sin GUI)
 $HEADLESS = $false
 
-# Duracion maxima del healthcheck (segundos)
-$HEALTHCHECK_TIMEOUT = 60
+# Duracion maxima del healthcheck del backend (segundos)
+$HEALTHCHECK_TIMEOUT = 90
 # Intervalo entre intentos del healthcheck (segundos)
 $HEALTHCHECK_INTERVAL = 2
+# Tiempo maximo de espera para que Docker (PostgreSQL+Redis) este saludable
+$DOCKER_HEALTH_TIMEOUT = 30
 
 # Ruta raiz del proyecto
 $ROOT = $PSScriptRoot
@@ -273,8 +275,8 @@ $null = Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action {
 try {
     Write-Banner
 
-    # -- [1/8] Verificar Node.js -------------------------------
-    Write-Step 1 8 "Verificando Node.js..."
+    # -- [1/10] Verificar Node.js -------------------------------
+    Write-Step 1 10 "Verificando Node.js..."
     if (-not (Test-CommandAvailable "node")) {
         Write-Err "Node.js no esta instalado."
         Write-Host "   Descargalo en: https://nodejs.org (version LTS)"
@@ -285,8 +287,8 @@ try {
     $nodeVer = node --version
     Write-OK "Node.js detectado: $nodeVer"
 
-    # -- [2/8] Verificar / Instalar pnpm -----------------------
-    Write-Step 2 8 "Verificando pnpm..."
+    # -- [2/10] Verificar / Instalar pnpm -----------------------
+    Write-Step 2 10 "Verificando pnpm..."
     if (-not (Test-CommandAvailable "pnpm")) {
         Write-Warn "pnpm no encontrado. Activando corepack para pnpm..."
         try {
@@ -304,8 +306,8 @@ try {
     $pnpmVer = pnpm --version
     Write-OK "pnpm detectado: v$pnpmVer"
 
-    # -- [3/8] Verificar Docker ---------------------------------
-    Write-Step 3 8 "Verificando Docker..."
+    # -- [3/10] Verificar Docker ---------------------------------
+    Write-Step 3 10 "Verificando Docker..."
     if (-not (Test-CommandAvailable "docker")) {
         Write-Err "Docker no esta instalado o no esta en el PATH."
         Write-Host "   Instala Docker Desktop: https://www.docker.com/products/docker-desktop"
@@ -323,8 +325,8 @@ try {
         exit 1
     }
 
-    # -- [4/8] Verificar y liberar puertos ---------------------
-    Write-Step 4 8 "Verificando y liberando puertos 3000 y 5173..."
+    # -- [4/10] Verificar y liberar puertos ---------------------
+    Write-Step 4 10 "Verificando y liberando puertos 3000 y 5173..."
 
     # --- Puerto 3000 (Backend) ---
     $port3000 = Get-ProcessOnPort -Port 3000
@@ -368,8 +370,8 @@ try {
         Write-Host "   O mejor:  .\run.ps1 desde PowerShell nativo."
     }
 
-    # -- [5/8] Verificar .env -----------------------------------
-    Write-Step 5 8 "Verificando archivo .env..."
+    # -- [5/10] Verificar .env -----------------------------------
+    Write-Step 5 10 "Verificando archivo .env..."
     $envPath = Join-Path $ROOT ".env"
     $envExamplePath = Join-Path $ROOT ".env.example"
 
@@ -393,8 +395,8 @@ try {
         Write-OK ".env encontrado"
     }
 
-    # -- [6/8] Instalar dependencias si faltan -----------------
-    Write-Step 6 8 "Verificando dependencias..."
+    # -- [6/10] Instalar dependencias si faltan -----------------
+    Write-Step 6 10 "Verificando dependencias..."
     $rootModules = Join-Path $ROOT "node_modules"
 
     # En pnpm workspaces, si existe node_modules raiz, las dependencias
@@ -432,8 +434,8 @@ try {
         Pop-Location
     }
 
-    # -- [7/8] Levantar Docker (PostgreSQL + Redis) ------------
-    Write-Step 7 8 "Levantando contenedores Docker..."
+    # -- [7/10] Levantar Docker (PostgreSQL + Redis) ------------
+    Write-Step 7 10 "Levantando contenedores Docker..."
     $composeFile = Join-Path $ROOT "docker-compose.dev.yml"
     try {
         Push-Location $ROOT
@@ -448,8 +450,117 @@ try {
         Pop-Location
     }
 
-    # -- [8/8] Iniciar servidores -------------------------------
-    Write-Step 8 8 "Iniciando servidores..."
+    # -- [7a] Esperar a que PostgreSQL y Redis esten saludables --
+    Write-StepLabel "7a" "Esperando a que PostgreSQL y Redis esten listos..."
+    $dbReady = $false
+    $redisReady = $false
+    $dockerAttempts = 0
+    $maxDockerAttempts = [math]::Floor($DOCKER_HEALTH_TIMEOUT / 2)
+
+    while ((-not $dbReady -or -not $redisReady) -and $dockerAttempts -lt $maxDockerAttempts) {
+        $dockerAttempts++
+        Start-Sleep -Seconds 2
+
+        if (-not $dbReady) {
+            try {
+                $pgCheck = docker exec farmacy_postgres_dev pg_isready -U farmacy_user -d farmacy_db 2>$null
+                if ($LASTEXITCODE -eq 0) { $dbReady = $true }
+            } catch {}
+        }
+        if (-not $redisReady) {
+            try {
+                $redisCheck = docker exec farmacy_redis_dev redis-cli ping 2>$null
+                if ($redisCheck -match 'PONG') { $redisReady = $true }
+            } catch {}
+        }
+
+        if ($dockerAttempts % 5 -eq 0) {
+            $status = @()
+            if (-not $dbReady) { $status += 'PostgreSQL' }
+            if (-not $redisReady) { $status += 'Redis' }
+            Write-Host "   ...esperando $($status -join ', ') (intento $dockerAttempts de $maxDockerAttempts)" -ForegroundColor DarkGray
+        }
+    }
+
+    if (-not $dbReady) {
+        Write-Err "PostgreSQL no se pudo conectar despues de $DOCKER_HEALTH_TIMEOUT segundos."
+        Write-Host "   Verifica: docker logs farmacy_postgres_dev" -ForegroundColor Yellow
+        pause
+        exit 1
+    }
+    if (-not $redisReady) {
+        Write-Err "Redis no se pudo conectar despues de $DOCKER_HEALTH_TIMEOUT segundos."
+        Write-Host "   Verifica: docker logs farmacy_redis_dev" -ForegroundColor Yellow
+        pause
+        exit 1
+    }
+    Write-OK "PostgreSQL y Redis listos"
+
+    # -- [7b] Ejecutar migraciones de Prisma -----------------
+    Write-StepLabel "7b" "Ejecutando migraciones de base de datos..."
+    try {
+        Push-Location (Join-Path $ROOT "backend")
+        $prevDbUrl = $env:DATABASE_URL
+        $env:DATABASE_URL = 'postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db'
+        npx prisma migrate deploy --schema=../database/prisma/schema.prisma 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Migraciones ejecutadas"
+        } else {
+            Write-Warn "migrate deploy fallo, intentando db push..."
+            npx prisma db push --schema=../database/prisma/schema.prisma 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-OK "Esquema aplicado via db push"
+            } else {
+                Write-Warn "No se pudo aplicar el esquema - el backend podria fallar"
+            }
+        }
+        $env:DATABASE_URL = $prevDbUrl
+    } catch {
+        Write-Warn "Error en migraciones: $_"
+    } finally {
+        Pop-Location
+    }
+
+    # -- [7c] Cargar seeds (datos iniciales) -----------------
+    Write-StepLabel "7c" "Cargando seeds de la base de datos..."
+    try {
+        Push-Location (Join-Path $ROOT "backend")
+        pnpm run db:seed 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Seeds ejecutados"
+        } else {
+            Write-Warn "Seeds fallaron (puede ser normal si la DB ya tiene datos)"
+        }
+    } catch {
+        Write-Warn "Error al ejecutar seeds: $_"
+    } finally {
+        Pop-Location
+    }
+
+    # -- [8/10] Verificar dependencias de sub-paquetes -----------
+    Write-Step 8 10 "Verificando dependencias de backend/frontend..."
+    foreach ($pkg in @('backend', 'frontend')) {
+        $pkgDir = Join-Path $ROOT $pkg
+        $pkgModules = Join-Path $pkgDir 'node_modules'
+        if (-not (Test-Path $pkgModules)) {
+            Write-Skip "$pkg/node_modules no encontrado. Ejecutando pnpm install..."
+            try {
+                Push-Location $pkgDir
+                pnpm install
+                if ($LASTEXITCODE -ne 0) { throw "pnpm install fallo en $pkg" }
+                Write-OK "Dependencias de $pkg instaladas"
+            } catch {
+                Write-Err "Fallo pnpm install en $pkg: $_"
+            } finally {
+                Pop-Location
+            }
+        } else {
+            Write-OK "$pkg dependencias listas"
+        }
+    }
+
+    # -- [9/10] Iniciar servidores -------------------------------
+    Write-Step 9 10 "Iniciando servidores..."
     Write-Host ""
 
     # Configurar variables de entorno para los procesos hijos
@@ -491,9 +602,9 @@ try {
         Write-Host "   (Shell: $shellExe)" -ForegroundColor DarkGray
     }
 
-    # -- Healthcheck --------------------------------------------
+    # -- [10/10] Healthcheck --------------------------------------------
     Write-Host ""
-    Write-StepLabel "--" "Verificando salud del backend..."
+    Write-StepLabel "10/10" "Verificando salud del backend..."
     $healthOK = Start-HealthcheckLoop
 
     if (-not $healthOK) {
