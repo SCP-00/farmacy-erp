@@ -102,7 +102,7 @@ jobs:
 
       - name: Seed database
         working-directory: ./backend
-        run: pnpm exec tsx ../database/seeds/seed.ts
+        run: pnpm run db:seed
         env:
           DATABASE_URL: "postgresql://farmacy_user:farmacy_pass@localhost:5432/farmacy_db"
           JWT_SECRET: "test_jwt_secret_minimo_32_caracteres_para_ci"
@@ -113,7 +113,7 @@ jobs:
       - name: Start backend
         working-directory: ./backend
         run: |
-          npx tsx src/server.ts &
+          npx ts-node src/server.ts &
           echo "BACKEND_PID=$!" >> $GITHUB_ENV
           for i in $(seq 1 30); do
             curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/v1/health | grep -q "200" && break
