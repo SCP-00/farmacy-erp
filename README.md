@@ -124,8 +124,8 @@ Farmacy/
 
 ```powershell
 # 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/farmacy.git
-cd farmacy
+git clone https://github.com/SCP-00/farmacy-erp.git
+cd farmacy-erp
 
 # 2. Configurar variables de entorno
 cp .env.example .env
@@ -150,8 +150,8 @@ setup.bat
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/farmacy.git
-cd farmacy
+git clone https://github.com/SCP-00/farmacy-erp.git
+cd farmacy-erp
 
 # 2. Configurar variables de entorno
 cp .env.example .env
