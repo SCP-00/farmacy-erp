@@ -34,6 +34,7 @@ const mockPrisma = vi.hoisted(() => ({
   sucursal: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
   venta: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
   lote: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn(), count: vi.fn() },
+  configParam: { findUnique: vi.fn().mockResolvedValue({ clave: 'DEVOLUCION_DIAS_LIMITE', valor: '15' }) },
   inventario: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn() },
   caja: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
   cajaMovimiento: { findMany: vi.fn(), create: vi.fn(), count: vi.fn() },
@@ -288,6 +289,7 @@ describe('Ventas Routes - POST /ventas/:id/devolucion', () => {
       total: 50000, devolucion: null,
       detalles: [{ loteId: 'lote-1', cantidad: 2, productoId: 'prod-1', precioUnitario: 2500, subtotal: 5000, id: 'det-1' }],
     })
+    mockPrisma.lote.findUnique.mockResolvedValue({ id: 'lote-1', fechaVencimiento: new Date(Date.now() + 30 * 86400000) })
     mockPrisma.$transaction.mockImplementation(async (cb: Function) => cb(mockPrisma))
     const res = await supertest(app).post(`${apiPrefix}/ventas/v-1/devolucion`)
       .set('Authorization', 'Bearer valid-admin-token')

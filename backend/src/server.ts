@@ -7,6 +7,7 @@ import { env } from './config/env'
 import { connectDB, disconnectDB } from './config/database'
 import { connectRedis } from './config/redis'
 import { iniciarJobAlertas } from './jobs/alertas'
+import { iniciarJobsFidelidad } from './jobs/fidelidad'
 import { sseManager } from './services/sse.service'
 import { wsManager } from './services/websocket.service'
 import { iniciarWorkers, detenerWorkers } from './jobs/queue'
@@ -34,8 +35,9 @@ async function main() {
   // 4. Inicializar SSE (distribuye eventos del EventBus a clientes SSE)
   sseManager.init()
 
-  // 5. Programar job de alertas de inventario (FEFO)
+  // 5. Programar job de alertas de inventario (FEFO) + jobs de fidelidad
   iniciarJobAlertas()
+  iniciarJobsFidelidad()
 
   // 6. Levantar servidor HTTP (primero, para pasar el server a WS)
   const server = app.listen(Number(env.PORT), () => {

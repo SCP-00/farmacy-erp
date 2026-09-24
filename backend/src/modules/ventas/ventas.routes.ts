@@ -138,11 +138,14 @@ ventasRouter.post('/:id/devolucion', autenticar, autorizar('ADMINISTRADOR', 'FAR
       if (venta.devolucion)    return responder.error(res, 'Esta venta ya tiene una devolución')
       if (venta.estado !== 'PAGADO') return responder.error(res, 'Solo se pueden devolver ventas pagadas')
 
+      // Límite de días configurable en config_param (antes hardcodeado)
+      const paramDias = await prisma.configParam.findUnique({ where: { clave: 'DEVOLUCION_DIAS_LIMITE' } })
+      const diasLimite = Number(paramDias?.valor ?? 15)
       const diasDesdeVenta = Math.floor(
         (Date.now() - venta.creadoEn.getTime()) / (1000 * 60 * 60 * 24)
       )
-      if (diasDesdeVenta > 15) {
-        return responder.error(res, 'Han pasado más de 15 días desde la compra')
+      if (diasDesdeVenta > diasLimite) {
+        return responder.error(res, `Han pasado más de ${diasLimite} días desde la compra`)
       }
 
       await prisma.$transaction(async (tx: any) => {
@@ -154,11 +157,37 @@ ventasRouter.post('/:id/devolucion', autenticar, autorizar('ADMINISTRADOR', 'FAR
         if (reintegraStock) {
           for (const d of venta.detalles) {
             if (d.loteId) {
-              await tx.lote.update({
+              // Solo reintegra a lotes NO vencidos (producto no vendible si venció)
+              const lote = await tx.lote.findUnique({
                 where: { id: d.loteId },
-                data:  { cantidadActual: { increment: d.cantidad } },
+                select: { fechaVencimiento: true },
               })
+              if (lote && lote.fechaVencimiento > new Date()) {
+                await tx.lote.update({
+                  where: { id: d.loteId },
+                  data:  { cantidadActual: { increment: d.cantidad } },
+                })
+              }
             }
+          }
+        }
+
+        // ── Fidelidad: reversión de puntos (antes el cliente se quedaba con todo) ──
+        if (venta.clienteId) {
+          // 1) Revertir puntos GANADOS con la MISMA regla única de config:
+          //    floor((total - costoEnvio) * PUNTOS_POR_PESO); el envío no genera puntos
+          const paramPuntos = await prisma.configParam.findUnique({ where: { clave: 'PUNTOS_POR_PESO' } })
+          const puntosPorPeso = Number(paramPuntos?.valor ?? '0.01')
+          const basePuntos = Math.max(0, Number(venta.total) - Number(venta.costoEnvio ?? 0))
+          const puntosGanados = Math.floor(basePuntos * puntosPorPeso)
+          // 2) Re-creditar puntos USADOS en esa venta
+          const puntosUsados = venta.puntosUsados ?? 0
+          const delta = puntosUsados - puntosGanados
+          if (delta !== 0) {
+            await tx.cliente.update({
+              where: { id: venta.clienteId },
+              data: { puntosAcumulados: delta > 0 ? { increment: delta } : { decrement: -delta } },
+            })
           }
         }
       })
