@@ -219,6 +219,20 @@ function Checkout() {
       clienteIdRef.current = undefined
     }
   }, [cliente?.id])
+  // Persistir datos de envío en localStorage
+  useEffect(() => {
+    if (paso === 'datos' || paso === 'pago') {
+      localStorage.setItem(DATOS_STORAGE_KEY, JSON.stringify(datos))
+    }
+  }, [datos, paso])
+
+  // Limpiar localStorage al completar la compra exitosamente
+  useEffect(() => {
+    if (paso === 'confirmacion') {
+      localStorage.removeItem(DATOS_STORAGE_KEY)
+    }
+  }, [paso])
+
 
   const sub = subtotal()
   const saldoPts = (cliente as unknown as { puntos?: number })?.puntos ?? 0
@@ -456,12 +470,6 @@ function Checkout() {
     setErrorPago('')
   }
 
-  const handleCancelarPago = () => {
-    setPaso('pago')
-    setErrorPago('')
-    setMetodoPago(null)
-  }
-
   // ── Pantalla: carrito vacío ────────────────────────────────
   if (items.length === 0 && paso !== 'confirmacion') {
     return (
@@ -494,19 +502,6 @@ function Checkout() {
     )
   }
 
-  // Persistir datos de envío en localStorage
-  useEffect(() => {
-    if (paso === 'datos' || paso === 'pago') {
-      localStorage.setItem(DATOS_STORAGE_KEY, JSON.stringify(datos))
-    }
-  }, [datos, paso])
-
-  // Limpiar localStorage al completar la compra exitosamente
-  useEffect(() => {
-    if (paso === 'confirmacion') {
-      localStorage.removeItem(DATOS_STORAGE_KEY)
-    }
-  }, [paso])
 
   // ── Pantalla: confirmación ─────────────────────────────────
   if (paso === 'confirmacion' && pedidoInfo) {
@@ -754,7 +749,7 @@ function Checkout() {
                 disabled={ventaMut.isPending || !codigo.trim()}
                 className="px-4 bg-slate-800 text-white text-sm font-medium rounded-xl hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {ventaMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aplicar'}
+                {validandoCupon || ventaMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aplicar'}
               </button>
             </div>
             {cuponAplicado && descuento > 0 && (

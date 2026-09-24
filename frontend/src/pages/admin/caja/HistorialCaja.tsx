@@ -6,7 +6,7 @@ import { useFormateo } from '@/hooks'
 import toast from 'react-hot-toast'
 
 export default function HistorialCaja() {
-  const { cop, fechaCorta, fechaHora } = useFormateo()
+  const { cop, fechaHora } = useFormateo()
   const qc = useQueryClient()
   
   const [modalCierre, setModalCierre] = useState(false)
@@ -17,7 +17,7 @@ export default function HistorialCaja() {
     queryFn: cajaService.estadoActual,
   })
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['caja', 'historial'],
     queryFn: cajaService.historial,
   })

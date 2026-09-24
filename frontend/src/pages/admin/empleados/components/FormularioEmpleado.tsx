@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react'
 import { X, Save, Eye, EyeOff } from 'lucide-react'
 import { empleadosService, sucursalesService } from '@/services'
 import toast from 'react-hot-toast'
-import { InputField, SelectField, InputError } from '@/components/shared/InputField'
+import { InputField, SelectField } from '@/components/shared/InputField'
 
 // ── Esquema de validación con Zod ─────────────────────────
 const empleadoSchema = z.object({

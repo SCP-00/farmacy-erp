@@ -3,13 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Truck, Package, ChevronRight,
-  Calendar, Hash, DollarSign, ClipboardList, Save,
+  ClipboardList, Save,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { comprasService, productosService } from '@/services'
 import { useFormateo } from '@/hooks'
 import { useAuthStore } from '@/store/authStore'
-import { InputField, InputError } from '@/components/shared/InputField'
+import { InputField } from '@/components/shared/InputField'
 
 interface LoteRecibir {
   productoId: string

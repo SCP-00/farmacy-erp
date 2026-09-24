@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { MapPin, Clock, Phone, ChevronRight, ShoppingCart, Shield, Truck, Sparkles, ArrowRight } from 'lucide-react'
+import { MapPin, ChevronRight, ShoppingCart, ArrowRight } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useCarrito, useFormateo, useCategorias } from '@/hooks'
 import { CATEGORIAS_ICONOS } from '@/config/constants'

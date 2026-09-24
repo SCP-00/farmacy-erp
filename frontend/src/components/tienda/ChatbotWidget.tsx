@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   MessageCircle, X, Send, Bot, User as UserIcon,
   AlertTriangle, AlertCircle, Info, Pill, ShoppingCart,
-  Activity, ChevronDown, ChevronUp, Sparkles, HeartHandshake,
+  Activity, ChevronDown, ChevronUp, HeartHandshake,
   ArrowLeft,
 } from 'lucide-react'
 import { useChatbot, type ProductoChatbot, type AlertaChatbot } from '@/hooks'
@@ -128,7 +128,7 @@ export default function ChatbotWidget() {
   const { chatbotAbierto, toggleChatbot, darkMode } = useUiStore()
   const { mensajes, escribiendo, enviar } = useChatbot()
   const [input, setInput] = useState('')
-  const [showQuickActions, setShowQuickActions] = useState(true)
+  const [_showQuickActions, setShowQuickActions] = useState(true)
   const [hasInteracted, setHasInteracted] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)

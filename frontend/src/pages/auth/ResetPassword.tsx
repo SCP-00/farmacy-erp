@@ -33,7 +33,7 @@ function PasswordStrength({ password }: { password: string }) {
 }
 
 export default function ResetPassword() {
-  const navigate = useNavigate()
+  const _disabled_navigate = useNavigate() // eslint: unused
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') || ''
 

@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { Fragment } from 'react'
+import { } from 'react'
 import { Filter, Sparkles, Loader2 } from 'lucide-react'
 import { ProductCard } from '@/components/tienda/ProductCard'
 import { useProductosBusqueda, useCategorias } from '@/hooks'

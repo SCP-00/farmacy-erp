@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Package, AlertTriangle, FileText, Activity, Scale, CalendarDays, Ban, FlaskConical, Eye, Hash, Building2, ScrollText, Syringe, Info } from 'lucide-react'
+import { Plus, Search, Package, AlertTriangle, FileText, Activity, Scale, CalendarDays, Syringe, Info } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'

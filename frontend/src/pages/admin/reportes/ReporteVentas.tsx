@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Users, Calendar, Download, Filter, Clock } from 'lucide-react'
+import { TrendingUp, DollarSign, ShoppingCart, Users, Download, Filter, Clock } from 'lucide-react'
 import { reportesService } from '@/services'
 import { useFormateo } from '@/hooks'
 import { ESTADO_VENTA_LABEL, METODO_PAGO_LABEL } from '@/config/constants'

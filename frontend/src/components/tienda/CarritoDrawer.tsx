@@ -27,7 +27,7 @@ interface CarritoDrawerProps {
  * ```
  */
 export default function CarritoDrawer({ open, onClose }: CarritoDrawerProps) {
-  const { items, totalItems, total, agregar, quitar, cambiarCantidad, tieneRx } = useCarrito()
+  const { items, totalItems, total, agregar: _agregar, quitar, cambiarCantidad, tieneRx } = useCarrito()
   const { estaLogueado } = useAuthCliente()
   const { cop } = useFormateo()
 

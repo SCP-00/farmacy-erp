@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import { useAuthCliente } from '@/hooks'
-import SEOHead from '@/components/shared/SEOHead'
 
 export function LoginClienteComponent() {
   const { login, loginLoading, googleUrl } = useAuthCliente()

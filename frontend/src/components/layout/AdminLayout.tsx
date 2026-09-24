@@ -2,7 +2,7 @@ import { Outlet, NavLink, Link } from 'react-router-dom'
 import {
   LayoutDashboard, ShoppingCart, Package, Truck, Users,
   BarChart3, Settings, LogOut, Bell,
-  ChevronRight, CreditCard, UserCheck, PanelRightClose, PanelRightOpen,
+ CreditCard, UserCheck, PanelRightClose, PanelRightOpen,
   Shield, BellOff, BellRing,
 } from 'lucide-react'
 import { useState } from 'react'

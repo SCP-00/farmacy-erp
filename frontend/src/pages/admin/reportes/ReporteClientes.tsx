@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Users, Star, TrendingUp, Award, ShoppingBag, Calendar } from 'lucide-react'
+import { Users, TrendingUp, Award, ShoppingBag } from 'lucide-react'
 import { reportesService } from '@/services'
 import { useFormateo } from '@/hooks'
 

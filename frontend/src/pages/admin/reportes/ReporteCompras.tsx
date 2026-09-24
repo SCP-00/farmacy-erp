@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Package, DollarSign, Truck, TrendingUp, Calendar, Filter } from 'lucide-react'
+import { Package, DollarSign, Truck, TrendingUp, Filter } from 'lucide-react'
 import { reportesService } from '@/services'
 import { useFormateo } from '@/hooks'
 

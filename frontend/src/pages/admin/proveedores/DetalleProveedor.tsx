@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Building2, Mail, Phone, MapPin, FileText, Package,
-  ArrowLeft, Pencil, X, Check, ChevronRight,
+  ArrowLeft, Pencil, Check,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useState } from 'react'
