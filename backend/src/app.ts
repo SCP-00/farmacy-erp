@@ -44,6 +44,7 @@ import { sseRouter } from './modules/reportes/reportes.sse'
 import { auditoriaRouter } from './modules/auditoria/auditoria.routes'
 import { pushRouter } from './modules/push/push.routes'
 import { cuponesRouter } from './modules/cupones/cupones.routes'
+import { healthRouter } from './modules/health/health.routes'
 
 export function createApp(): Express {
   const app = express()
@@ -180,6 +181,7 @@ export function createApp(): Express {
   app.use(`${prefix}/pagos`, pagosRouter)
   app.use(`${prefix}/push`, pushRouter)
   app.use(`${prefix}/cupones`, cuponesRouter)
+  app.use(`${prefix}/health`, healthRouter)
 
   // ── 404 y manejador global de errores ─────────────────
   app.use((_req: Request, res: Response) => {
