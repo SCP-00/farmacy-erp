@@ -210,10 +210,12 @@ export const clientesService = {
     apiCliente.post(`/clientes/auth/pedidos/${ventaId}/devolucion-request`, { motivo }).then(r => r.data),
 
   // ── Comprar B2C — Cliente autenticado realiza compra
+  // Seguro por diseño: el cliente SOLO envía productoId+cantidad y el código
+  // de cupón; precios, descuentos y totales los calcula el backend.
   comprar: (data: {
     metodoPago: string;
-    items: { productoId: string; cantidad: number; precioUnitario: number }[];
-    descuento?: number;
+    items: { productoId: string; cantidad: number }[];
+    codigoDescuento?: string;
     puntosUsados?: number;
     direccionEnvio?: string;
     ciudad?: string;
@@ -316,15 +318,22 @@ export const pushService = {
 
 /** Pasarelas de pago. Wompi, Stripe, MercadoPago, efectivo. */
 export const pagosService = {
-  crearWompi: (ventaId: string, monto: number) =>
-    apiCliente.post('/pagos/wompi/crear', { ventaId, monto }).then(r => r.data.data),
+  // El monto nunca viaja desde el cliente: el backend lo toma de la venta en DB
+  crearWompi: (ventaId: string) =>
+    apiCliente.post('/pagos/wompi/crear', { ventaId }).then(r => r.data.data),
 
   crearStripeIntent: (ventaId: string) =>
     apiCliente.post('/pagos/stripe/crear-intent', { ventaId }).then(r => r.data.data),
 
-  crearMercadoPago: (data: { pedidoId?: string; ventaId?: string; items: unknown[]; monto?: number; clienteEmail?: string }) =>
+  crearMercadoPago: (data: { pedidoId?: string; ventaId?: string; clienteEmail?: string }) =>
     apiCliente.post('/pagos/mercadopago/crear', data).then(r => r.data.data),
 
   registrarEfectivo: (ventaId: string, monto: number) =>
     api.post('/pagos/efectivo/registrar', { ventaId, monto }).then(r => r.data),
+}
+
+/** Cupones de descuento. Validación y cálculo SIEMPRE server-side. */
+export const cuponesService = {
+  validar: (codigo: string, items: Array<{ productoId: string; cantidad: number }>) =>
+    apiCliente.post('/cupones/validar', { codigo, items }).then(r => r.data.data),
 }
