@@ -75,6 +75,7 @@ vi.mock('../utils/logger', () => ({
 }))
 vi.mock('../config/mailer', () => ({ sendEmail: vi.fn(), emailTemplates: { verificarEmail: vi.fn(() => '<html/>'), resetPassword: vi.fn(() => '<html/>') } }))
 vi.mock('node-cron', () => ({ default: { schedule: vi.fn() }, schedule: vi.fn() }))
+vi.mock('../jobs/queue', () => ({ encolarEmail: vi.fn().mockResolvedValue(undefined) }))
 
 vi.mock('../utils/jwt.utils', () => ({
   jwtEmpleado: {

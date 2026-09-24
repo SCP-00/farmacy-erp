@@ -228,6 +228,8 @@ model DetalleOrdenCompra {
 
 model Cliente {
   id                String         @id @default(uuid()) @db.Uuid
+  // puntosExpiranEn marca la vigencia de TODOS los puntos no redimidos del cliente;
+  // se recalcula en cada compra (última compra + PUNTOS_VIGENCIA_DIAS).
   nombre            String         @db.VarChar(100)
   apellido          String         @db.VarChar(100)
   email             String         @unique @db.VarChar(150)
@@ -301,6 +303,8 @@ model Venta {
   costoEnvio Decimal      @default(0) @map("costo_envio") @db.Decimal(12, 2)
   total      Decimal      @db.Decimal(12, 2)
   estado     String       @default("PAGADO") @db.VarChar(20)
+  puntosUsados Int        @default(0) @map("puntos_usados")
+  codigoDescuentoId String? @map("codigo_descuento_id") @db.Uuid
   creadoEn   DateTime     @default(now()) @map("creado_en")
   caja       Caja?        @relation(fields: [cajaId], references: [id])
   empleado   Empleado     @relation(fields: [empleadoId], references: [id])
@@ -308,6 +312,9 @@ model Venta {
   detalles   DetalleVenta[]
   pagos      PagoTransaccion[]
   devolucion Devolucion?
+  codigoDescuento CodigoDescuento? @relation(fields: [codigoDescuentoId], references: [id])
+
+  @@index([estado, creadoEn])
   @@map("ventas")
 }
 
@@ -316,7 +323,7 @@ model DetalleVenta {
   ventaId        String   @map("venta_id") @db.Uuid
   productoId     String   @map("producto_id") @db.Uuid
   loteId         String?  @map("lote_id") @db.Uuid
-  text           String?  @map("texto_ejemplo")
+  costoUnitario  Decimal  @default(0) @map("costo_unitario") @db.Decimal(12, 2)
   cantidad       Int
   precioUnitario Decimal  @map("precio_unitario") @db.Decimal(12, 2)
   descuento      Decimal  @default(0) @db.Decimal(12, 2)
@@ -387,7 +394,17 @@ model CodigoDescuento {
   fechaInicio     DateTime? @map("fecha_inicio")
   fechaFin        DateTime? @map("fecha_fin")
   creadoEn        DateTime  @default(now()) @map("creado_en")
+  ventas          Venta[]
   @@map("codigos_descuento")
+}
+
+model ConfigParam {
+  clave        String   @id @db.VarChar(100)
+  valor        String
+  descripcion  String?
+  actualizadoEn DateTime @default(now()) @updatedAt @map("actualizado_en")
+
+  @@map("config_param")
 }
 
 model PushSubscription {

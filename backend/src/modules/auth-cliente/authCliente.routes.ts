@@ -24,6 +24,7 @@ import { emailTemplates } from '../../config/mailer'
 import { encolarEmail } from '../../jobs/queue'
 import { env } from '../../config/env'
 import { logger } from '../../utils/logger'
+import { VentasService } from '../../services/ventas.service'
 
 // ── Schemas ───────────────────────────────────────────────
 const registroSchema = z.object({
@@ -286,179 +287,84 @@ authClienteRouter.patch('/me', autenticarCliente, limitarCreacion, async (req: R
 })
 
 // ── POST /comprar — Cliente autenticado realiza una compra B2C
-// Crea una venta con estado PENDIENTE, registra los items del carrito,
-// y descuenta stock de lotes siguiendo FEFO (First Expiry, First Out).
+
+// ── POST /comprar — Cliente autenticado realiza una compra B2C
+// Ruta DELGADA: toda la lógica de dinero vive en VentasService.registrarVenta().
+//  - Precios SIEMPRE server-side (el cliente no envía precioUnitario).
+//  - puntosUsados se recorta al saldo real (nunca se confía en el cliente).
+//  - Cupones se validan server-side contra codigos_descuento (el frontend solo
+//    envía el código, nunca el descuento calculado).
+//  - Stock FEFO atómico dentro de la transacción.
+//  - Config de envío desde config_param (editable sin deploy).
 authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (req: Request, res: Response) => {
-  const { metodoPago, items, descuento = 0, puntosUsados = 0, direccionEnvio, ciudad } = req.body
+  const { metodoPago, items, codigoDescuento, puntosUsados = 0, direccionEnvio, ciudad } = req.body
   const clienteId = req.cliente!.id
 
-  if (!items?.length) return responder.error(res, 'El carrito está vacío', 400)
+  if (!Array.isArray(items) || !items.length) return responder.error(res, 'El carrito está vacío', 400)
   if (!metodoPago) return responder.error(res, 'Método de pago requerido', 400)
+
+  // Los items solo pueden traer productoId y cantidad
+  const itemsLimpios = items.map((i: any) => ({ productoId: String(i.productoId), cantidad: Math.max(1, Math.floor(Number(i.cantidad) || 1)) }))
 
   try {
     const resultado = await prisma.$transaction(async (tx) => {
-      // 1. Verificar cliente
+      const configRows = await tx.configParam.findMany()
+      const config = Object.fromEntries(configRows.map((p: any) => [p.clave, p.valor]))
+
       const cliente = await tx.cliente.findUniqueOrThrow({ where: { id: clienteId } })
-      let subtotal = 0
 
-      // 2. Verificar stock y calcular total
-      for (const item of items) {
-        const lotesDisponibles = await tx.lote.findMany({
-          where: {
-            productoId: item.productoId,
-            cantidadActual: { gte: item.cantidad },
-            fechaVencimiento: { gte: new Date() },
-          },
-          orderBy: [{ fechaVencimiento: 'asc' }, { creadoEn: 'asc' }],
-          take: 10,
-        })
-
-        const stockTotal = lotesDisponibles.reduce((s, l) => s + l.cantidadActual, 0)
-        if (stockTotal < item.cantidad) {
-          throw new Error(`Stock insuficiente para producto ${item.productoId}`)
-        }
-
-        const producto = await tx.producto.findUniqueOrThrow({ where: { id: item.productoId } })
-        subtotal += Number(producto.precioVenta) * item.cantidad
-      }
-
-      // 3. Calcular costo de envío por ciudad
-      const TARIFAS_ENVIO: Record<string, number> = {
-        'bogotá': 5000, 'medellín': 7000, 'cali': 8000,
-        'barranquilla': 10000, 'cartagena': 10000, 'pereira': 5000,
-        'manizales': 6000, 'armenia': 6000, 'bucaramanga': 8000,
-        'cúcuta': 10000, 'ibagué': 7000, 'villavicencio': 8000,
-        'pasto': 10000, 'sincelejo': 10000, 'montería': 10000,
-        'neiva': 9000, 'santa marta': 10000, 'valledupar': 10000,
-      }
+      // Costo de envío server-side (tarifas desde config_param, JSON)
+      let tarifasEnvio: Record<string, number> = {}
+      try { tarifasEnvio = JSON.parse(config.ENVIO_TARIFAS_CIUDADES ?? '{}') } catch { tarifasEnvio = {} }
       const ciudadLower = (ciudad || cliente.ciudad || '').toLowerCase().trim()
-      const costoEnvio = TARIFAS_ENVIO[ciudadLower] ?? 10000
+      const costoEnvioBase = tarifasEnvio[ciudadLower] ?? Number(config.ENVIO_COSTO_DEFAULT ?? '10000')
 
-      // Envío gratis sobre $50.000
-      const envioGratis = subtotal >= 50000
-      const costoEnvioFinal = envioGratis ? 0 : costoEnvio
-
-      const puntosDescontados = Number(puntosUsados) || 0
-      const total = Math.max(0, subtotal - descuento + costoEnvioFinal - puntosDescontados)
-
-      // 4. Generar número de venta
-      // 4. Obtener empleado administrador por defecto para B2C
+      // Empleado administrador responsable de la venta B2C (trazabilidad estable)
       const adminEmpleado = await tx.empleado.findFirst({
         where: { rol: 'ADMINISTRADOR', activo: true },
         orderBy: { email: 'asc' },
       })
       if (!adminEmpleado) throw new Error('No hay administrador configurado para ventas B2C')
 
-      const ultimaVenta = await tx.venta.findFirst({ orderBy: { numero: 'desc' } })
-      const nuevoNumero = (ultimaVenta?.numero ?? 0) + 1
-
-      // 5. Crear la venta
-      const venta = await tx.venta.create({
-        data: {
-          numero: nuevoNumero,
-          sucursalId: 1, // Sucursal por defecto
-          empleadoId: adminEmpleado.id,
-          clienteId,
-          metodoPago,
-          subtotal,
-          descuento: descuento + puntosDescontados,
-          iva: 0,
-          costoEnvio: costoEnvioFinal,
-          total,
-          estado: metodoPago === 'EFECTIVO' ? 'PENDIENTE' : 'PENDIENTE',
-          detalles: {
-            create: items.map((item: any) => ({
-              productoId: item.productoId,
-              cantidad: item.cantidad,
-              precioUnitario: item.precioUnitario,
-              descuento: 0,
-              subtotal: item.cantidad * item.precioUnitario,
-            })),
-          },
-        },
-        include: { detalles: true },
+      // Subtotal estimado para envío gratis (precio real lo calcula el servicio)
+      const productos = await tx.producto.findMany({
+        where: { id: { in: itemsLimpios.map((i: any) => i.productoId) } },
+        select: { id: true, precioVenta: true },
       })
+      const precios = new Map(productos.map((p: any) => [p.id, Number(p.precioVenta)]))
+      const subtotalEstimado = itemsLimpios.reduce((s: number, i: any) => s + (precios.get(i.productoId) ?? 0) * i.cantidad, 0)
+      const envioGratis = subtotalEstimado >= Number(config.ENVIO_GRATIS_DESDE ?? '50000')
+      const costoEnvio = envioGratis ? 0 : costoEnvioBase
 
-      // 6. Descontar stock FEFO
-      for (const item of items) {
-        let resto = item.cantidad
-        const lotes = await tx.lote.findMany({
-          where: {
-            productoId: item.productoId,
-            cantidadActual: { gt: 0 },
-            fechaVencimiento: { gte: new Date() },
-          },
-          orderBy: [{ fechaVencimiento: 'asc' }, { creadoEn: 'asc' }],
-        })
-
-        for (const lote of lotes) {
-          if (resto <= 0) break
-          const descontar = Math.min(resto, lote.cantidadActual)
-          await tx.lote.update({
-            where: { id: lote.id },
-            data: { cantidadActual: lote.cantidadActual - descontar },
-          })
-          resto -= descontar
-        }
-      }
-
-      // 7. Puntos de fidelidad — restar usados, sumar ganados
-      // Los puntos se calculan SOLO sobre el valor de productos (excluye envío)
-      const basePuntos = Math.max(0, subtotal - descuento)
-      const puntosGanados = Math.floor(basePuntos / 100)
-
-      if (puntosDescontados > 0) {
-        await tx.cliente.update({
-          where: { id: clienteId },
-          data: { puntosAcumulados: { decrement: puntosDescontados } },
-        })
-      }
-
-      if (puntosGanados > 0) {
-        const expira = new Date()
-        expira.setFullYear(expira.getFullYear() + 1)
-        await tx.cliente.update({
-          where: { id: clienteId },
-          data: {
-            puntosAcumulados: { increment: puntosGanados },
-            puntosExpiranEn: expira,
-          },
-        })
-      }
-
-      // 8. Si es efectivo, registrar pago como PENDIENTE (contra entrega)
-      // El pago se confirma cuando el admin registra el cobro en el POS
-      if (metodoPago === 'EFECTIVO') {
-        await tx.pagoTransaccion.create({
-          data: {
-            ventaId: venta.id,
-            pasarela: 'EFECTIVO',
-            monto: total,
-            moneda: 'COP',
-            estado: 'PENDIENTE',
-            referenciaExterna: `EF-${nuevoNumero}`,
-          },
-        })
-      }
+      const venta = await VentasService.registrarVenta({
+        sucursalId: 1, // TODO: multi-sucursal B2C — selección por inventario/geografía
+        empleadoId: adminEmpleado.id,
+        clienteId,
+        metodoPago,
+        codigoDescuento,
+        puntosUsados,
+        costoEnvio,
+        estado: 'PENDIENTE',
+        registrarPagoEfectivo: metodoPago === 'EFECTIVO',
+        items: itemsLimpios, // sin precioUnitario → precio server-side garantizado
+      })
 
       return {
         ventaId: venta.id,
-        numero: nuevoNumero,
-        total,
-        subtotal,
-        descuento,
-        puntosUsados: puntosDescontados,
-        costoEnvio: costoEnvioFinal,
-        puntosGanados,
+        numero: venta.numero,
+        total: venta.total,
+        subtotal: venta.subtotal,
+        descuento: venta.descuento,
+        puntosUsados: venta.puntosUsados,
+        costoEnvio: venta.costoEnvio,
         estado: venta.estado,
       }
     })
 
     logger.info(`[B2C Compra] Cliente ${clienteId} — Venta #${resultado.numero} — Total: $${resultado.total}`)
     return responder.creado(res, resultado, 'Compra realizada exitosamente')
-
   } catch (err: any) {
-    if (err.message?.includes('Stock insuficiente')) {
+    if (err.message?.includes('Stock insuficiente') || err.message?.includes('Cupón') || err.message?.includes('Cliente no encontrado')) {
       return responder.error(res, err.message, 400)
     }
     logger.error(`[B2C Compra] Error: ${err.message}`)

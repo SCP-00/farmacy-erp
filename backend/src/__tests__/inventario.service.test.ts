@@ -70,109 +70,88 @@ describe('InventarioService', () => {
     })
   })
 
-  // ── descontarStockFEFO ───────────────────────────────────
+  // ── descontarStockFEFO (contrato hardening: $queryRaw FOR UPDATE + updateMany atómico) ──
   describe('descontarStockFEFO()', () => {
-    it('descuenta de un solo lote si hay suficiente stock', async () => {
-      const mockTx = {
-        lote: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'lote-1', cantidadActual: 20, fechaVencimiento: new Date('2026-06-15') },
-          ]),
-          update: vi.fn().mockResolvedValue({}),
-        },
+    function crearTx(lotes: any[]) {
+      return {
+        $queryRaw: vi.fn().mockResolvedValue(lotes),
+        lote: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
       }
+    }
+
+    it('descuenta de un solo lote si hay suficiente stock', async () => {
+      const mockTx = crearTx([{ id: 'lote-1', cantidad_actual: 20, precio_compra: 1500 }])
 
       const resultado = await InventarioService.descontarStockFEFO(mockTx, 'prod-1', 1, 5)
 
-      expect(resultado).toEqual([{ loteId: 'lote-1', cantidad: 5 }])
-      expect(mockTx.lote.update).toHaveBeenCalledWith({
-        where: { id: 'lote-1' },
+      expect(resultado).toEqual([{ loteId: 'lote-1', cantidad: 5, precioCompra: 1500 }])
+      expect(mockTx.lote.updateMany).toHaveBeenCalledWith({
+        where: { id: 'lote-1', cantidadActual: { gte: 5 } },
         data: { cantidadActual: { decrement: 5 } },
       })
     })
 
     it('descuenta de múltiples lotes siguiendo FEFO', async () => {
-      const mockTx = {
-        lote: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'lote-1', cantidadActual: 5, fechaVencimiento: new Date('2026-06-01') },
-            { id: 'lote-2', cantidadActual: 10, fechaVencimiento: new Date('2026-07-15') },
-          ]),
-          update: vi.fn().mockResolvedValue({}),
-        },
-      }
+      const mockTx = crearTx([
+        { id: 'lote-1', cantidad_actual: 5, precio_compra: 1000 },
+        { id: 'lote-2', cantidad_actual: 10, precio_compra: 2000 },
+      ])
 
       const resultado = await InventarioService.descontarStockFEFO(mockTx, 'prod-1', 1, 12)
 
       expect(resultado).toEqual([
-        { loteId: 'lote-1', cantidad: 5 },
-        { loteId: 'lote-2', cantidad: 7 },
+        { loteId: 'lote-1', cantidad: 5, precioCompra: 1000 },
+        { loteId: 'lote-2', cantidad: 7, precioCompra: 2000 },
       ])
-      expect(mockTx.lote.update).toHaveBeenCalledTimes(2)
-      expect(mockTx.lote.update).toHaveBeenNthCalledWith(1, {
-        where: { id: 'lote-1' },
-        data: { cantidadActual: { decrement: 5 } },
-      })
-      expect(mockTx.lote.update).toHaveBeenNthCalledWith(2, {
-        where: { id: 'lote-2' },
+      expect(mockTx.lote.updateMany).toHaveBeenCalledTimes(2)
+      expect(mockTx.lote.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: 'lote-2', cantidadActual: { gte: 7 } },
         data: { cantidadActual: { decrement: 7 } },
       })
     })
 
     it('lanza error si no hay stock suficiente entre todos los lotes', async () => {
-      const mockTx = {
-        lote: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'lote-1', cantidadActual: 3, fechaVencimiento: new Date('2026-06-01') },
-          ]),
-          update: vi.fn().mockResolvedValue({}),
-        },
-      }
+      const mockTx = crearTx([{ id: 'lote-1', cantidad_actual: 3, precio_compra: 1000 }])
 
       await expect(
         InventarioService.descontarStockFEFO(mockTx, 'prod-1', 1, 10)
       ).rejects.toThrow('Sin stock suficiente')
 
-      expect(mockTx.lote.update).toHaveBeenCalledTimes(1)
+      expect(mockTx.lote.updateMany).toHaveBeenCalledTimes(1)
+    })
+
+    it('lanza error si el decremento atómico no matchea (conflicto de concurrencia)', async () => {
+      const mockTx = crearTx([{ id: 'lote-1', cantidad_actual: 20, precio_compra: 1000 }])
+      mockTx.lote.updateMany.mockResolvedValue({ count: 0 })
+
+      await expect(
+        InventarioService.descontarStockFEFO(mockTx, 'prod-1', 1, 5)
+      ).rejects.toThrow('Conflicto de stock')
     })
 
     it('descuenta la cantidad exacta cuando es igual al stock disponible', async () => {
-      const mockTx = {
-        lote: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'lote-1', cantidadActual: 10, fechaVencimiento: new Date('2026-06-01') },
-          ]),
-          update: vi.fn().mockResolvedValue({}),
-        },
-      }
+      const mockTx = crearTx([{ id: 'lote-1', cantidad_actual: 10, precio_compra: 900 }])
 
       const resultado = await InventarioService.descontarStockFEFO(mockTx, 'prod-1', 1, 10)
 
-      expect(resultado).toEqual([{ loteId: 'lote-1', cantidad: 10 }])
+      expect(resultado).toEqual([{ loteId: 'lote-1', cantidad: 10, precioCompra: 900 }])
     })
 
-    it('respeta el orden FEFO (el mock simula que Prisma ya ordenó por fechaVencimiento asc)', async () => {
-      // El mock de tx.lote.findMany debe devolver los lotes YA ordenados
-      // por fechaVencimiento asc, que es lo que hace Prisma con orderBy
-      const mockTx = {
-        lote: {
-          findMany: vi.fn().mockResolvedValue([
-            { id: 'lote-A', cantidadActual: 5, fechaVencimiento: new Date('2026-06-01') },
-            { id: 'lote-C', cantidadActual: 10, fechaVencimiento: new Date('2026-07-01') },
-            { id: 'lote-B', cantidadActual: 8, fechaVencimiento: new Date('2026-08-01') },
-          ]),
-          update: vi.fn().mockResolvedValue({}),
-        },
-      }
+    it('respeta el orden FEFO (el mock simula el ORDER BY fecha_vencimiento ASC con FOR UPDATE)', async () => {
+      const mockTx = crearTx([
+        { id: 'lote-A', cantidad_actual: 5, precio_compra: 100 },
+        { id: 'lote-C', cantidad_actual: 10, precio_compra: 300 },
+        { id: 'lote-B', cantidad_actual: 8, precio_compra: 200 },
+      ])
 
       const resultado = await InventarioService.descontarStockFEFO(mockTx, 'prod-1', 1, 18)
 
       // FEFO: lote-A (jun) → lote-C (jul) → lote-B (ago)
       // Toma: 5 del A, 10 del C, 3 del B
       expect(resultado).toEqual([
-        { loteId: 'lote-A', cantidad: 5 },
-        { loteId: 'lote-C', cantidad: 10 },
-        { loteId: 'lote-B', cantidad: 3 },
+        { loteId: 'lote-A', cantidad: 5, precioCompra: 100 },
+        { loteId: 'lote-C', cantidad: 10, precioCompra: 300 },
+        { loteId: 'lote-B', cantidad: 3, precioCompra: 200 },
       ])
     })
   })

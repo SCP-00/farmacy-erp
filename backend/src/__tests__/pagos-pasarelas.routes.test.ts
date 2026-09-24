@@ -90,6 +90,7 @@ vi.mock('../utils/jwt.utils', () => ({
 // Hoisted mock Stripe instance — allows direct reference in tests
 const mockStripeInstance = vi.hoisted(() => ({
   paymentIntents: { create: vi.fn() },
+  checkout: { sessions: { create: vi.fn() } },
   webhooks: { constructEvent: vi.fn() },
 }))
 
@@ -127,16 +128,17 @@ describe('Stripe configurado — POST /pagos/stripe/crear-intent', () => {
     expect(res.body.error).toContain('Pedido')
   })
 
-  it('crea PaymentIntent exitosamente y upsert transacción', async () => {
-    mockStripeInstance.paymentIntents.create.mockResolvedValue({
-      id: 'pi_789',
-      client_secret: 'pi_789_secret_abc',
+  it('crea Checkout Session exitosamente con monto server-side y upsert transacción', async () => {
+    mockStripeInstance.checkout.sessions.create.mockResolvedValue({
+      id: 'cs_789',
+      url: 'https://checkout.stripe.com/c/pay/cs_789',
     })
     mockPrisma.pedidoOnline.findUnique.mockResolvedValue({
       id: '11111111-1111-4111-1111-111111111111',
       numero: 99,
       total: 75000,
       estado: 'PENDIENTE',
+      cliente: { email: 'cliente@test.com' },
     })
     mockPrisma.pagoTransaccion.upsert.mockResolvedValue({ id: 'stripe-pago-1', estado: 'PENDIENTE' })
 
@@ -146,12 +148,18 @@ describe('Stripe configurado — POST /pagos/stripe/crear-intent', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.ok).toBe(true)
-    expect(res.body.data.clientSecret).toBe('pi_789_secret_abc')
-    expect(mockStripeInstance.paymentIntents.create).toHaveBeenCalledWith({
-      amount: 7500000, // 75000 * 100
-      currency: 'cop',
-      metadata: { pedidoId: '11111111-1111-4111-1111-111111111111', numeroPedido: '99' },
-    })
+    expect(res.body.data.sessionUrl).toBe('https://checkout.stripe.com/c/pay/cs_789')
+    // Monto SIEMPRE server-side: total del pedido en DB (75000 × 100)
+    expect(mockStripeInstance.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({ unit_amount: 7500000, currency: 'cop' }),
+          }),
+        ],
+        metadata: expect.objectContaining({ numeroPedido: '99' }),
+      })
+    )
     expect(mockPrisma.pagoTransaccion.upsert).toHaveBeenCalledTimes(1)
   })
 
