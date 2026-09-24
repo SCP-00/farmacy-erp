@@ -17,7 +17,8 @@ const { mockPrisma, mockCronSchedule } = vi.hoisted(() => ({
 vi.mock('../config/database', () => ({ prisma: mockPrisma }))
 
 vi.mock('node-cron', () => ({
-  default: { schedule: mockCronSchedule, schedule: mockCronSchedule },
+  default: { schedule: mockCronSchedule },
+  schedule: mockCronSchedule,
 }))
 
 vi.mock('../utils/logger', () => ({
