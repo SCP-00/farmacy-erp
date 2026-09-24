@@ -10,6 +10,7 @@
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:generate": "npx prisma generate --schema=../database/prisma/schema.prisma",
     "db:migrate": "npx prisma migrate dev --schema=../database/prisma/schema.prisma",
     "db:migrate:deploy": "npx prisma migrate deploy --schema=../database/prisma/schema.prisma",
