@@ -100,11 +100,12 @@ Farmacy/
 
 | Concepto | Valor |
 |---|---|
-| **Ganancia** | 1 punto por cada $100 COP del total final pagado |
+| **Ganancia** | 1 punto por cada $100 COP de la base pagada (excluye envío) — `PUNTOS_POR_PESO` en `config_param` |
 | **Canje** | 1 punto = $1 COP de descuento en la próxima compra |
-| **Expiración** | 1 año después de la última compra |
-| **Asignación** | Automática en `VentasService.registrarVenta()` — transacción atómica |
-| **Pago en efectivo** | Seleccionar cliente en POS → los puntos se asignan automáticamente |
+| **Expiración** | `PUNTOS_VIGENCIA_DIAS` (365) desde la última compra — job diario de expiración |
+| **Asignación** | Automática en `VentasService.registrarVenta()` — transacción atómica, server-side |
+| **Devoluciones** | Revierten puntos ganados y re-creditan puntos usados de la venta |
+| **Anti-fraude** | `puntosUsados` se recorta al saldo real; cupones validados y aplicados solo en el backend |
 
 ---
 
@@ -254,6 +255,19 @@ cd frontend && pnpm run dev
    git log --all -p -S "sk_test_" -- .env
    ```
 3. **Configurar Google OAuth** manualmente en [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+
+---
+
+## 💵 Invariantes de seguridad (hardening de dinero)
+
+> Reglas que NO se pueden romper al agregar features. Los tests las protegen.
+
+1. **Montos y precios SIEMPRE server-side** — el cliente solo envía `productoId`, `cantidad`, código de cupón y puntos a usar. Wompi/Stripe/MercadoPago toman el monto de la venta en DB.
+2. **Puntos** — `puntosUsados` se recorta al saldo real del cliente (anti-fraude); regla de ganancia única en `VentasService.registrarVenta()`.
+3. **Cupones** — se validan y aplican solo contra la tabla `codigos_descuento` (vigencia, usos máximos, incremento atómico). Preview: `POST /api/v1/cupones/validar`.
+4. **FEFO atómico** — `SELECT FOR UPDATE` + decrement revalidado dentro del lock; sin ventas duplicadas de stock.
+5. **Pedidos huérfanos** — ventas B2C `PENDIENTE` sin pago aprobado tras 24h se marcan `EXPIRADO` y liberan stock (job horario).
+6. **Config de negocio** — umbrales, tarifas y reglas viven en `config_param` (DB), no hardcodeadas.
 
 ---
 
