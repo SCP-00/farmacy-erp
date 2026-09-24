@@ -45,7 +45,6 @@ vi.mock('node-cron', () => ({
 }))
 
 import { obtenerUmbral, UMBRALES_DIAS, iniciarJobAlertas } from '../jobs/alertas'
-import { prisma } from '../config/database'
 import { logger } from '../utils/logger'
 import cron from 'node-cron'
 

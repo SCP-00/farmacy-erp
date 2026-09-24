@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { prisma } from '../../config/database'
 import { cache } from '../../config/redis'
 import { responder, parsePaginacion } from '../../utils/respuesta.utils'
-import { autenticar, autorizar, validarCuerpo, validarQuery, limitarCreacion, limitarBusqueda } from '../../middlewares/index'
+import { autenticar, autorizar, validarQuery, limitarCreacion, limitarBusqueda } from '../../middlewares/index'
 
 export const productosRouter: Router = Router()
 
@@ -34,7 +34,7 @@ const listarAdminSchema = z.object({
 //  GET /buscar — Búsqueda pública (Excluye Muestras Médicas)
 // ══════════════════════════════════════════════════════════
 productosRouter.get('/buscar', limitarBusqueda, validarQuery(buscarSchema), async (req: Request, res: Response) => {
-  const { q, categoria, rx, ordenar, pagina, limite } = req.query as any
+  const { q, categoria, rx, ordenar } = req.query as any
   const { skip, limite: lim, pagina: pag } = parsePaginacion(req.query as any)
 
   const cacheKey = `productos:buscar:${JSON.stringify(req.query)}`

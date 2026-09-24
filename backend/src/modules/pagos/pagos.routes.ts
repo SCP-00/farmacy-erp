@@ -8,7 +8,7 @@
 //  POST /api/v1/pagos/mercadopago/webhook
 //  POST /api/v1/pagos/efectivo/registrar   (solo empleados)
 // ══════════════════════════════════════════════════════════
-import { Router, Request, Response, raw } from 'express'
+import { Router, Request, Response } from 'express'
 import Stripe from 'stripe'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import crypto from 'crypto'
@@ -25,9 +25,10 @@ const webhookIpAllowlist = env.WEBHOOK_IP_ALLOWLIST
   : []
 const verificarIpWebhook = verificarIpPermitida(webhookIpAllowlist)
 
-// ── Anti-replay: caché en memoria de nonces/timestamps ────
+// ── Anti-replay: caché en memoria de nonces ────
+// La expiración real la da el timestamp del evento (validarTimestampWebhook);
+// el Set se limpia por tamaño para acotar memoria.
 const webhookNonces = new Set<string>()
-const WEBHOOK_NONCE_TTL_MS = 5 * 60 * 1000 // 5 minutos
 
 function limpiarNoncesViejos() {
   if (webhookNonces.size > 10000) webhookNonces.clear()
@@ -423,10 +424,9 @@ pagosRouter.post('/mercadopago/crear', autenticarCliente, async (req: Request, r
 })
 
 pagosRouter.post('/mercadopago/webhook', verificarIpWebhook, limitarWebhook, async (req: Request, res: Response) => {
-  const { type, data, action } = req.body
+  const { type, data } = req.body
 
-  // Validar firma HMAC (MercadoPago envía x-signature y x-request-id)
-  const signature = req.headers['x-signature'] as string
+  // Idempotencia (MercadoPago envía x-request-id)
   const requestId = req.headers['x-request-id'] as string
 
   if (requestId && verificarIdempotencia(requestId)) {

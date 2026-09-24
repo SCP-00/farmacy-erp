@@ -4,7 +4,6 @@
 //  síncrono directo (compatibilidad con ruta existente).
 // ══════════════════════════════════════════════════════════
 import { prisma } from '../config/database'
-import { logger } from '../utils/logger'
 
 export async function exportarCSV(
   tipo: 'ventas' | 'compras' | 'inventario',

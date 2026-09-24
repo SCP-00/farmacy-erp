@@ -17,7 +17,7 @@ import crypto from 'crypto'
 import { z } from 'zod'
 import { prisma } from '../../config/database'
 import { cache } from '../../config/redis'
-import { jwtCliente, jwtTemp } from '../../utils/jwt.utils'
+import { jwtCliente } from '../../utils/jwt.utils'
 import { responder } from '../../utils/respuesta.utils'
 import { autenticarCliente, validarCuerpo, limitarLogin, limitarCreacion, limitarRegistro } from '../../middlewares/index'
 import { emailTemplates } from '../../config/mailer'
@@ -297,7 +297,7 @@ authClienteRouter.patch('/me', autenticarCliente, limitarCreacion, async (req: R
 //  - Stock FEFO atómico dentro de la transacción.
 //  - Config de envío desde config_param (editable sin deploy).
 authClienteRouter.post('/comprar', autenticarCliente, limitarCreacion, async (req: Request, res: Response) => {
-  const { metodoPago, items, codigoDescuento, puntosUsados = 0, direccionEnvio, ciudad } = req.body
+  const { metodoPago, items, codigoDescuento, puntosUsados = 0, ciudad } = req.body
   const clienteId = req.cliente!.id
 
   if (!Array.isArray(items) || !items.length) return responder.error(res, 'El carrito está vacío', 400)

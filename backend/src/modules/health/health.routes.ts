@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { prisma } from '../../config/database'
-import { cache, redis } from '../../config/redis'
+import { cache } from '../../config/redis'
 import { responder } from '../../utils/respuesta.utils'
 
 export const healthRouter: Router = Router()

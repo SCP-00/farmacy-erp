@@ -22,7 +22,8 @@ export interface ResultadoVerificacion {
 
 // ── Verificar interacciones entre múltiples productos ────
 export async function verificarInteracciones(
-  productoIds: string[]
+  productoIds: string[],
+  alergenosCliente?: string[]
 ): Promise<ResultadoVerificacion> {
   if (productoIds.length < 2) return { tieneAlertas: false, alertas: [] }
 
@@ -35,7 +36,7 @@ export async function verificarInteracciones(
       select: {
         id: true, nombre: true, principioActivo: true,
         interacciones: true, contraindicaciones: true,
-        reaccionesAdversas: true,
+        reaccionesAdversas: true, alergenos: true,
       },
     })
 
@@ -115,6 +116,15 @@ export async function verificarInteracciones(
           descripcion: `${p.nombre}: ${p.reaccionesAdversas}`,
           severidad: 'INFO',
         })
+      }
+    }
+
+    // Alérgenos del perfil de salud del cliente vs composición de cada producto
+    // (usa verificarAlergenos: misma lógica, campo alergenos ya incluido en el select)
+    if (alergenosCliente?.length) {
+      for (const p of productos) {
+        const resAlergeno = await verificarAlergenos(p.id, alergenosCliente)
+        alertas.push(...resAlergeno.alertas)
       }
     }
 

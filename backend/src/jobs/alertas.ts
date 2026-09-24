@@ -1,6 +1,5 @@
 import cron from 'node-cron'
 import { prisma } from '../config/database'
-import { emailTemplates } from '../config/mailer'
 import { encolarEmail } from './queue'
 import { logger } from '../utils/logger'
 

@@ -1,5 +1,4 @@
 import { prisma } from '../config/database'
-import { logger } from '../utils/logger'
 
 export class InventarioService {
   /**

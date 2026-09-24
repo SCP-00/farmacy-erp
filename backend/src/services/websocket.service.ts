@@ -5,7 +5,7 @@
 // ══════════════════════════════════════════════════════════
 import { WebSocketServer, WebSocket as WS, type RawData } from 'ws'
 import type { Server as HTTPServer } from 'http'
-import { eventBus, Eventos, type PayloadEvento } from './eventbus.service'
+import { eventBus, Eventos } from './eventbus.service'
 import { logger } from '../utils/logger'
 import jwt from 'jsonwebtoken'
 import { env } from '../config/env'
