@@ -1,6 +1,7 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Package, AlertTriangle, FileText, Activity, Scale, CalendarDays, Syringe, Info } from 'lucide-react'
+import { Plus, Search, Package, AlertTriangle, FileText, Activity, Scale, CalendarDays, Syringe, Info, Upload } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -50,6 +51,7 @@ const productoSchema = z.object({
 type ProductoForm = z.infer<typeof productoSchema>
 
 export default function ListaProductos() {
+  const navigate = useNavigate()
   const { cop }    = useFormateo()
   const qc         = useQueryClient()
   const [busqueda, setBusqueda] = useState('')
@@ -150,10 +152,16 @@ export default function ListaProductos() {
           <h1 className="text-2xl font-semibold text-gray-900 dark:text-dark-text">Inventario de Medicamentos</h1>
           <p className="text-sm text-gray-400 dark:text-dark-text-muted mt-0.5">{data?.meta?.total ?? 0} presentaciones comerciales (CUM) registradas</p>
         </div>
-        <button onClick={() => { setEditando(null); reset(); setModalOpen(true) }}
-          className="btn-primary">
-          <Plus size={16}/> Registrar Medicamento
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => navigate('/admin/inventario/importar')}
+            className="btn-secondary">
+            <Upload size={16}/> Importar CSV
+          </button>
+          <button onClick={() => { setEditando(null); reset(); setModalOpen(true) }}
+            className="btn-primary">
+            <Plus size={16}/> Registrar Medicamento
+          </button>
+        </div>
       </div>
 
       {/* Búsqueda */}

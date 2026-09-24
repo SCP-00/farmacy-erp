@@ -120,6 +120,12 @@ export const inventarioService = {
     api.get(`/inventario/alertas${query}`).then(r => r.data.data),
 }
 
+/** Importación masiva de catálogo por CSV (solo ADMIN/AUXILIAR). */
+export const importadorService = {
+  productos: (csv: string) =>
+    api.post('/importar/productos', { csv }).then(r => r.data.data),
+}
+
 /** Proveedores. CRUD completo para gestión de proveedores. */
 export const proveedoresService = {
   listar: (params?: Record<string, unknown>) =>
