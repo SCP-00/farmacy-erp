@@ -278,6 +278,9 @@ importers:
       date-fns:
         specifier: ^3.3.0
         version: 3.6.0
+      idb:
+        specifier: 7.1.1
+        version: 7.1.1
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)

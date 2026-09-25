@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff } from 'lucide-react'
+import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff, CloudOff, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { productosService, ventasService, cajaService, chatbotService } from '@/services'
+import { productosService, cajaService, chatbotService } from '@/services'
+import { encolarVenta, sincronizarOutbox, listarVentas, pendientes, type VentaOutbox } from '@/services/outboxOffline'
 import { useFormateo, useDebounce, useScanner, useWS } from '@/hooks'
 import type { WSEvent } from '@/hooks'
 import { CATEGORIAS_ICONOS, METODO_PAGO_LABEL } from '@/config/constants'
@@ -64,6 +65,39 @@ export default function PuntoVenta() {
   }, [qc])
 
   const { conectado: wsConectado } = useWS({ onEvent: handleWSEvent })
+
+  // ── Outbox offline (ADR 0004 fase 1): sync automático + estado ──
+  const [outboxPendientes, setOutboxPendientes] = useState(0)
+  const [outboxErrores, setOutboxErrores] = useState(0)
+
+  const refrescarOutbox = useCallback(async () => {
+    const cola = await pendientes()
+    setOutboxPendientes(cola.filter(v => v.estado === 'PENDIENTE').length)
+    setOutboxErrores(cola.filter(v => v.estado === 'ERROR').length)
+  }, [])
+
+  useEffect(() => {
+    let cancelado = false
+    const intentarSync = async () => {
+      if (navigator.onLine) {
+        const n = await sincronizarOutbox()
+        if (n > 0 && !cancelado) {
+          toast.success(`${n} venta${n > 1 ? 's' : ''} offline sincronizada${n > 1 ? 's' : ''}`)
+          qc.invalidateQueries({ queryKey: ['dashboard'] })
+          qc.invalidateQueries({ queryKey: ['productos'] })
+        }
+      }
+      if (!cancelado) await refrescarOutbox()
+    }
+    intentarSync()
+    window.addEventListener('online', intentarSync)
+    const intervalo = setInterval(intentarSync, 30_000)
+    return () => {
+      cancelado = true
+      window.removeEventListener('online', intentarSync)
+      clearInterval(intervalo)
+    }
+  }, [qc, refrescarOutbox])
 
   const { data: cajaActual } = useQuery({
     queryKey: ['caja', 'actual'],
@@ -147,34 +181,54 @@ export default function PuntoVenta() {
     setAlertasInteraccion(null)
   }
 
+  // ── Cobro vía outbox offline (ADR 0004 fase 1) ──────────
+  // La venta SIEMPRE se guarda primero en IndexedDB con su UUID de
+  // idempotencia: si hay red sale al instante; si no, el sync la envía
+  // cuando vuelva (reintento con backoff, sin duplicar stock gracias a
+  // la tabla ventas_sync del backend).
   const ventaMutation = useMutation({
-    mutationFn: () => ventasService.registrar({
-      sucursalId: empleado?.sucursalId ?? 1,
-      cajaId: cajaId ?? undefined,
-      clienteId: clienteId || undefined,
-      metodoPago: metodo,
-      descuento,
-      items: carrito.map(i => ({ productoId: i.productoId, cantidad: i.cantidad, precioUnitario: i.precioUnitario, descuento: 0 })),
-    }),
+    mutationFn: async (): Promise<VentaOutbox> => {
+      const encolada = await encolarVenta({
+        sucursalId: empleado?.sucursalId ?? 1,
+        cajaId: cajaId ?? undefined,
+        clienteId: clienteId || undefined,
+        metodoPago: metodo,
+        descuento,
+        items: carrito.map(i => ({ productoId: i.productoId, cantidad: i.cantidad, precioUnitario: i.precioUnitario, descuento: 0 })),
+      })
+      // Con red: envío inmediato de toda la cola (incluida esta venta)
+      if (navigator.onLine) await sincronizarOutbox()
+      const actualizada = (await listarVentas()).find(v => v.idempotencyKey === encolada.idempotencyKey)
+      return actualizada ?? encolada
+    },
     onSuccess: (data) => {
-      toast.success('Venta registrada exitosamente')
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-      qc.invalidateQueries({ queryKey: ['productos'] })
-      
-      // Mostrar tirilla
+      if (data.estado === 'SINCRONIZADA') {
+        toast.success(`Venta #${data.ventaNum} registrada exitosamente`)
+        qc.invalidateQueries({ queryKey: ['dashboard'] })
+        qc.invalidateQueries({ queryKey: ['productos'] })
+      } else if (data.estado === 'PENDIENTE') {
+        toast('Sin conexión: venta en cola offline, se sincronizará sola', { icon: '📡' })
+      } else {
+        // Rechazo del server (stock, cupón vencido...): cola de excepciones
+        toast.error(`Venta en cola de excepciones: ${data.ultimoError ?? 'revisar sync'}`)
+      }
+
+      // Mostrar tirilla — el cobro ya ocurrió en caja
       setFacturaVisible({
-        numero: data.ventaNum,
+        numero: data.ventaNum ?? `OFF-${data.idempotencyKey.slice(0, 8).toUpperCase()}`,
         fecha: new Date(),
         cajero: empleado?.nombre,
         items: [...carrito],
         subtotal,
         descuento,
-        total: data.total,
+        total,
         metodoPago: metodo
       })
+      refrescarOutbox()
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.error ?? 'Error al registrar venta')
+      // Aquí solo llega si falló la escritura local (IndexedDB)
+      toast.error(err?.message ?? 'No se pudo registrar la venta')
     },
   })
 
@@ -260,6 +314,11 @@ export default function PuntoVenta() {
         ) : (
           <span className="inline-flex items-center gap-1 text-amber-600 mr-1"><WifiOff size={10} />Reconectando...</span>
         )}
+        {outboxErrores > 0 ? (
+          <span className="inline-flex items-center gap-1 text-red-600 mr-1"><CloudOff size={10} />{outboxErrores} en excepción</span>
+        ) : outboxPendientes > 0 ? (
+          <span className="inline-flex items-center gap-1 text-amber-600 mr-1"><RefreshCw size={10} />{outboxPendientes} pendiente{outboxPendientes > 1 ? 's' : ''} de sync</span>
+        ) : null}
         <Keyboard size={10} />
         <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-dark-surface rounded text-[9px] font-mono border border-gray-200 dark:border-dark-border">F2</kbd> Cobrar
         <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-dark-surface rounded text-[9px] font-mono border border-gray-200 dark:border-dark-border">F4</kbd> Limpiar
