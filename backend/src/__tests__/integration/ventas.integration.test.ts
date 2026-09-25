@@ -228,4 +228,58 @@ describe('VentasService contra DB real', () => {
     expect(dbVencido!.puntosAcumulados).toBe(0)
     expect(dbVigente!.puntosAcumulados).toBe(300)
   })
+
+  it('OFFLINE fase 1: el mismo idempotencyKey del POS sincroniza UNA sola venta', async () => {
+    const { productoId, loteId } = await crearProductoConStock(5, 4000, 1500)
+    const key = 'a1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d'
+
+    const payload = {
+      sucursalId: 1,
+      empleadoId: admin.id,
+      metodoPago: 'EFECTIVO' as const,
+      items: [{ productoId, cantidad: 1 }],
+    }
+
+    // Flujo real del outbox: el POS cobra offline, la red vuelve, el primer
+    // POST llega y la respuesta se pierde (timeout) → el POS reintenta con
+    // la MISMA idempotencyKey. Sin la tabla ventas_sync esto duplicaría
+    // venta Y descuento de stock.
+    const primera = await VentasService.registrarVenta({ ...payload, idempotencyKey: key })
+    const reintento = await VentasService.registrarVenta({ ...payload, idempotencyKey: key })
+
+    // El reintento devuelve la venta ORIGINAL, no una nueva
+    expect(reintento.id).toBe(primera.id)
+    expect(reintento.numero).toBe(primera.numero)
+
+    // Una sola venta en DB, stock descontado una sola vez
+    const ventasEnDb = await prisma.venta.count({ where: { detalles: { some: { productoId } } } })
+    expect(ventasEnDb).toBe(1)
+    const lote = await prisma.lote.findUnique({ where: { id: loteId } })
+    expect(lote!.cantidadActual).toBe(4) // 5 - 1, NO 3
+
+    // La key quedó registrada y atada a la venta original
+    const sync = await prisma.ventaSync.findUnique({ where: { idempotencyKey: key } })
+    expect(sync).not.toBeNull()
+    expect(sync!.ventaId).toBe(primera.id)
+  })
+
+  it('OFFLINE fase 1: keys distintas son ventas distintas (sin colisiones)', async () => {
+    const { productoId, loteId } = await crearProductoConStock(4, 4000)
+    const payload = {
+      sucursalId: 1,
+      empleadoId: admin.id,
+      metodoPago: 'EFECTIVO' as const,
+      items: [{ productoId, cantidad: 1 }],
+    }
+
+    // Dos cobros offline distintos (cada uno con su UUID del outbox)
+    await VentasService.registrarVenta({ ...payload, idempotencyKey: 'b1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d' })
+    await VentasService.registrarVenta({ ...payload, idempotencyKey: 'c1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d' })
+
+    const ventasEnDb = await prisma.venta.count({ where: { detalles: { some: { productoId } } } })
+    expect(ventasEnDb).toBe(2)
+    const lote = await prisma.lote.findUnique({ where: { id: loteId } })
+    expect(lote!.cantidadActual).toBe(2) // 4 - 2
+    expect(await prisma.ventaSync.count()).toBe(2)
+  })
 })

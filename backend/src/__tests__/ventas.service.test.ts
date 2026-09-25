@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Hoisted mocks para usar en vi.mock ────────────────────
-const { mockDescontarStockFEFO, mockVentaCreate, mockClienteUpdate, mockTransaction } =
+const { mockDescontarStockFEFO, mockVentaCreate, mockClienteUpdate, mockTransaction, mockVentaSyncFindUnique } =
   vi.hoisted(() => ({
     mockDescontarStockFEFO: vi.fn(),
     mockVentaCreate: vi.fn(),
     mockClienteUpdate: vi.fn(),
     mockTransaction: vi.fn(),
+    mockVentaSyncFindUnique: vi.fn(),
   }))
 
 vi.mock('../services/inventario.service', () => ({
@@ -19,6 +20,7 @@ vi.mock('../config/database', () => ({
   prisma: {
     $transaction: mockTransaction,
     cliente: { update: mockClienteUpdate },
+    ventaSync: { findUnique: mockVentaSyncFindUnique },
   },
 }))
 
@@ -47,6 +49,7 @@ function crearTxMock(opts: { cliente?: any; cupon?: any } = {}) {
       update: vi.fn().mockResolvedValue({}),
     },
     venta: { create: mockVentaCreate },
+    ventaSync: { create: vi.fn().mockResolvedValue({}) },
     pagoTransaccion: { create: vi.fn().mockResolvedValue({}) },
     lote: { findMany: vi.fn(), updateMany: vi.fn() },
   }
@@ -301,6 +304,69 @@ describe('VentasService', () => {
           data: expect.objectContaining({ subtotal: 14000 }),
         })
       )
+    })
+
+    it('idempotencia offline: key ya sincronizada devuelve la venta original SIN reprocesar', async () => {
+      // El POS reintenta POST /ventas con la misma idempotency_key tras una
+      // caída de red: el server debe devolver la venta ya registrada y NO
+      // tocar stock, puntos ni crear una venta nueva.
+      mockVentaSyncFindUnique.mockResolvedValue({
+        idempotencyKey: '0f0e0d0c-0b0a-0908-0706-050403020100',
+        venta: { id: 'venta-original', numero: 42, total: 10000, detalles: [] },
+      })
+
+      const resultado = await VentasService.registrarVenta({
+        ...ventaBase,
+        idempotencyKey: '0f0e0d0c-0b0a-0908-0706-050403020100',
+      })
+
+      expect(resultado).toMatchObject({ id: 'venta-original', numero: 42 })
+      expect(mockVentaSyncFindUnique).toHaveBeenCalledWith({
+        where: { idempotencyKey: '0f0e0d0c-0b0a-0908-0706-050403020100' },
+        include: { venta: { include: { detalles: true } } },
+      })
+      // Nunca entró a la transacción: cero doble descuento de stock
+      expect(mockTransaction).not.toHaveBeenCalled()
+      expect(mockDescontarStockFEFO).not.toHaveBeenCalled()
+      expect(mockVentaCreate).not.toHaveBeenCalled()
+    })
+
+    it('idempotencia offline: key nueva registra venta y guarda la key en la misma transacción', async () => {
+      const tx = crearTxMock()
+      mockTransaction.mockImplementation(async (cb: any) => cb(tx))
+      mockVentaSyncFindUnique.mockResolvedValue(null) // primera vez que llega esta key
+      mockDescontarStockFEFO.mockResolvedValue([{ loteId: 'lote-1', cantidad: 1, precioCompra: 1000 }])
+      mockVentaCreate.mockResolvedValue({ id: 'venta-nueva', numero: 43, total: 5000, detalles: [] })
+
+      const resultado = await VentasService.registrarVenta({
+        ...ventaBase,
+        clienteId: undefined,
+        idempotencyKey: '1f0e0d0c-0b0a-0908-0706-050403020100',
+      })
+
+      expect(resultado).toMatchObject({ id: 'venta-nueva' })
+      // La key quedó atada a la venta DENTRO de la transacción (atómico:
+      // venta creada ⇒ key registrada; si la key falla, todo se revierte)
+      expect(tx.ventaSync.create).toHaveBeenCalledWith({
+        data: { idempotencyKey: '1f0e0d0c-0b0a-0908-0706-050403020100', ventaId: 'venta-nueva' },
+      })
+    })
+
+    it('idempotencia offline: carrera con key duplicada revierte TODA la venta', async () => {
+      const tx = crearTxMock()
+      tx.ventaSync.create.mockRejectedValue({ code: 'P2002' }) // unique violation
+      mockTransaction.mockImplementation(async (cb: any) => cb(tx))
+      mockVentaSyncFindUnique.mockResolvedValue(null) // pasó el early-return: carrera real
+      mockDescontarStockFEFO.mockResolvedValue([{ loteId: 'lote-1', cantidad: 1, precioCompra: 1000 }])
+      mockVentaCreate.mockResolvedValue({ id: 'venta-perdida', numero: 44, total: 5000, detalles: [] })
+
+      await expect(
+        VentasService.registrarVenta({
+          ...ventaBase,
+          clienteId: undefined,
+          idempotencyKey: '2f0e0d0c-0b0a-0908-0706-050403020100',
+        })
+      ).rejects.toThrow('Venta duplicada')
     })
   })
 })

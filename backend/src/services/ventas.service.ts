@@ -41,8 +41,22 @@ export class VentasService {
     costoEnvio?: number
     estado?: string // 'PAGADO' (POS) | 'PENDIENTE' (B2C antes de confirmar pasarela)
     registrarPagoEfectivo?: boolean // B2C contra-entrega: crea PagoTransaccion EFECTIVO
+    idempotencyKey?: string // Offline fase 1 (ADR 0004): outbox del POS
     items: Array<{ productoId: string; cantidad: number; precioUnitario?: number; descuento?: number }>
   }) {
+    // ── 0) Idempotencia offline: si esta venta ya se sincronizó, devolver
+    //      la original SIN reprocesar (retry de red no duplica stock).
+    if (data.idempotencyKey) {
+      const previa = await prisma.ventaSync.findUnique({
+        where: { idempotencyKey: data.idempotencyKey },
+        include: { venta: { include: { detalles: true } } },
+      })
+      if (previa) {
+        logger.info(`[Venta] Idempotencia offline: key ${data.idempotencyKey} → venta #${previa.venta.numero} ya sincronizada`)
+        return previa.venta
+      }
+    }
+
     return await prisma.$transaction(async (tx: any) => {
       const config = await obtenerConfig(tx)
       const puntosPorPeso = Number(config.PUNTOS_POR_PESO ?? '0.01')
@@ -199,6 +213,20 @@ export class VentasService {
       logger.info(
         `[Venta] #${venta.numero} — total $${total} — cupón: ${data.codigoDescuento ?? '—'} — puntos usados: ${puntosDescontados}`
       )
+
+      // Registrar la clave de idempotencia dentro de la MISMA transacción:
+      // venta creada ⇒ key registrada (átomo). Un sync repetido entra por el
+      // early-return de arriba y devuelve esta venta.
+      if (data.idempotencyKey) {
+        try {
+          await tx.ventaSync.create({
+            data: { idempotencyKey: data.idempotencyKey, ventaId: venta.id },
+          })
+        } catch (e: any) {
+          // Carrera: otra transacción registró la misma key → toda esta se revierte
+          throw new Error(`Venta duplicada (idempotency_key ${data.idempotencyKey} ya registrada)`)
+        }
+      }
 
       return venta
     })

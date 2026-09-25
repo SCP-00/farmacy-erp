@@ -313,6 +313,7 @@ model Venta {
   pagos      PagoTransaccion[]
   devolucion Devolucion?
   codigoDescuento CodigoDescuento? @relation(fields: [codigoDescuentoId], references: [id])
+  syncRecord      VentaSync?
 
   @@index([estado, creadoEn])
   @@map("ventas")
@@ -405,6 +406,20 @@ model ConfigParam {
   actualizadoEn DateTime @default(now()) @updatedAt @map("actualizado_en")
 
   @@map("config_param")
+}
+
+// Offline fase 1 (ADR 0004): idempotencia del outbox del POS.
+// La idempotency_key la genera el POS local (UUID); garantiza que un retry
+// de sincronización NUNCA duplique la venta ni descunte stock dos veces.
+model VentaSync {
+  idempotencyKey String   @id @map("idempotency_key") @db.Uuid
+  ventaId        String   @unique @map("venta_id") @db.Uuid
+  sincronizadaEn DateTime @default(now()) @map("sincronizada_en")
+
+  venta Venta @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+
+  @@index([ventaId])
+  @@map("ventas_sync")
 }
 
 model PushSubscription {

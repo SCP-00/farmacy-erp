@@ -6,6 +6,7 @@ import { prisma } from '../../config/database'
  * (productos, categorías, proveedores, lotes del seed y config_param).
  */
 export async function limpiarTransaccional(): Promise<void> {
+  await prisma.ventaSync.deleteMany({})
   await prisma.pagoTransaccion.deleteMany({})
   await prisma.devolucion.deleteMany({})
   await prisma.detalleVenta.deleteMany({})
