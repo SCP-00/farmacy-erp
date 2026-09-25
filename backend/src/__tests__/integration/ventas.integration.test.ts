@@ -231,7 +231,7 @@ describe('VentasService contra DB real', () => {
 
   it('OFFLINE fase 1: el mismo idempotencyKey del POS sincroniza UNA sola venta', async () => {
     const { productoId, loteId } = await crearProductoConStock(5, 4000, 1500)
-    const key = 'a1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d'
+    const key = 'a1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d' // gitleaks:allow — UUID de prueba, no credencial
 
     const payload = {
       sucursalId: 1,
@@ -273,8 +273,8 @@ describe('VentasService contra DB real', () => {
     }
 
     // Dos cobros offline distintos (cada uno con su UUID del outbox)
-    await VentasService.registrarVenta({ ...payload, idempotencyKey: 'b1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d' })
-    await VentasService.registrarVenta({ ...payload, idempotencyKey: 'c1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d' })
+    await VentasService.registrarVenta({ ...payload, idempotencyKey: 'b1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d' }) // gitleaks:allow — UUID de prueba
+    await VentasService.registrarVenta({ ...payload, idempotencyKey: 'c1b2c3d4-e5f6-4a1b-8c2d-9e0f1a2b3c4d' }) // gitleaks:allow — UUID de prueba
 
     const ventasEnDb = await prisma.venta.count({ where: { detalles: { some: { productoId } } } })
     expect(ventasEnDb).toBe(2)
