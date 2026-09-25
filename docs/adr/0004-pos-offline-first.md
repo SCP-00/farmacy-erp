@@ -1,4 +1,10 @@
-# ADR 0004: POS offline-first (diseño, no implementado)
+# ADR 0004: POS offline-first (fase 1 implementada)
+
+> **Estado de implementación**: fase 1 lista — outbox IndexedDB
+> (`frontend/src/services/outboxOffline.ts`, integrado en el POS),
+> idempotencia server-side (`ventas_sync` + `idempotencyKey` en
+> `POST /ventas`, migración `0004_offline_fase1`) y sync con reintento
+> exponencial + cola de excepciones. Fases 2 y 3 siguen en diseño.
 
 ## Contexto
 
