@@ -1,0 +1,32 @@
+{
+  "name": "farmacy-desktop",
+  "productName": "Farmacy",
+  "version": "1.0.0",
+  "description": "Farmacy — Sistema ERP de farmacia (POS offline-first)",
+  "main": "main.js",
+  "author": "Farmacy",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "dist:installer": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "co.farmacy.pos",
+    "productName": "Farmacy",
+    "directories": { "output": "dist-electron" },
+    "files": ["main.js", "preload.js", "package.json"],
+    "win": {
+      "icon": "../frontend/src-tauri/icons/icon.ico",
+      "target": ["portable"]
+    },
+    "portable": {
+      "artifactName": "Farmacy-Portable-${version}.exe"
+    }
+  }
+}

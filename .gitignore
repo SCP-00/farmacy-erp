@@ -12,6 +12,11 @@ out/
 dev-dist/
 *.tsbuildinfo
 
+# ── Empaquetado de escritorio (Tauri / Electron) ─────────
+frontend/src-tauri/target/
+frontend/src-tauri/gen/
+desktop/dist-electron/
+
 # ── Entorno ───────────────────────────────────────────────
 .env
 .env.local

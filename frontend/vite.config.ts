@@ -46,9 +46,13 @@ export default defineConfig({
         lang: 'es',
         categories: ['health', 'medical', 'pharmacy', 'shopping'],
         icons: [
+          // PNG rasterizados (compatibilidad universal: Android/Chrome/Edge store)
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          // Vectorial para pantallas de alta densidad
           { src: '/icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
           { src: '/icons/icon.svg',     sizes: '512x512', type: 'image/svg+xml' },
-          { src: '/icons/icon-maskable.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' },
         ],
         shortcuts: [
           {
