@@ -8,7 +8,7 @@
 [![Express](https://img.shields.io/badge/Express-4.18-green)](https://expressjs.com/)
 [![Prisma](https://img.shields.io/badge/Prisma-5.22-purple)](https://www.prisma.io/)
 [![Vite](https://img.shields.io/badge/Vite-6.4-646CFF)](https://vitejs.dev/)
-[![Tests](https://img.shields.io/badge/Tests-546%20%E2%9C%85-brightgreen)](backend/src/__tests__/)
+[![Tests](https://img.shields.io/badge/Tests-693%20%E2%9C%85-brightgreen)](backend/src/__tests__/)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 **Farmacy** es un sistema de gestión farmacéutica completo con tienda B2C integrada, panel administrativo POS, control de inventario FEFO (*First Expired, First Out*), programa de fidelidad con puntos, y múltiples pasarelas de pago (Wompi, Stripe, MercadoPago, Efectivo). Desarrollado como proyecto académico para la **Universidad Tecnológica de Pereira (UTP)**.
@@ -63,12 +63,14 @@ Farmacy/
 ├── backend/                # API REST (Express + TypeScript + Prisma)
 │   ├── src/modules/        # 19 módulos (auth, productos, ventas, caja, etc.)
 │   ├── src/services/       # Servicios compartidos (inventario, SSE, WebSocket)
-│   ├── src/__tests__/      # 28 archivos, 546 tests
+│   ├── src/__tests__/      # 30 archivos, 578 tests (+12 de integración)
 │   └── src/jobs/           # BullMQ workers (alertas, export CSV)
-├── frontend/               # SPA (React 19 + Vite 6 + Tailwind CSS 4)
+├── frontend/               # SPA/PWA (React 19 + Vite 6 + Tailwind CSS 4)
 │   ├── src/pages/tienda/   # 15 páginas B2C
 │   ├── src/pages/admin/    # 20+ páginas administrativas
-│   └── src/pages/auth/     # 7 páginas de autenticación
+│   ├── src/pages/auth/     # 7 páginas de autenticación
+│   └── src-tauri/          # Empaquetado escritorio Tauri v2 (.exe)
+├── desktop/                # Empaquetado Electron (portable .exe)
 ├── database/               # Prisma schema (17 modelos) + Seeds + SQL queries
 ├── docs/                   # Documentación técnica
 ├── e2e/                    # Tests E2E con Playwright
@@ -177,6 +179,34 @@ cd frontend && pnpm run dev
 
 ---
 
+## 📥 Instalar como aplicación (PWA / .exe)
+
+Farmacy se distribuye en **tres formatos** que comparten el mismo backend y la misma lógica offline del POS:
+
+| Formato | Descarga / instalación | Ideal para |
+|---|---|---|
+| 🌐 **PWA instalable** | Chrome/Edge → "Instalar aplicación" en la web desplegada | Prueba rápida, sin descargas |
+| ⚡ **Tauri** (recomendado) | [`Farmacy_1.0.0_x64-setup.exe` (2,3 MB)](https://github.com/SCP-00/farmacy-erp/releases/latest) | Producción en sucursal |
+| 🐘 **Electron portable** | [`Farmacy-Portable-1.0.0.exe` (74 MB)](https://github.com/SCP-00/farmacy-erp/releases/latest) | Equipos donde no se puede instalar nada |
+
+> El POS de escritorio conecta con tu servidor (nube, VPS o `localhost`) desde el campo **"Servidor de la empresa"** del login, y funciona **sin internet**: las ventas quedan en cola local y se sincronizan con idempotencia al reconectar.
+
+📖 Guía completa de empaquetado, compilación y configuración de servidor: **[docs/packaging-desktop.md](docs/packaging-desktop.md)**
+
+Compilar localmente:
+
+```bash
+# Tauri (requiere Rust ≥ 1.77)
+cd frontend && pnpm install && pnpm exec tauri build
+# → frontend/src-tauri/target/release/bundle/nsis/Farmacy_1.0.0_x64-setup.exe
+
+# Electron portable
+cd desktop && pnpm run dist
+# → desktop/dist-electron/Farmacy-Portable-1.0.0.exe
+```
+
+---
+
 ## 🔧 Variables de entorno
 
 ### Requeridas
@@ -214,10 +244,12 @@ cd frontend && pnpm run dev
 
 | Suite | Comando | Tests |
 |---|---|---|
-| Backend | `cd backend && pnpm test` | 546 tests (28 archivos) |
-| Coverage | `cd backend && pnpm test -- --coverage` | 95.35% statements |
-| Frontend | `cd frontend && pnpm test` | Tests de componentes |
+| Backend (unit) | `cd backend && pnpm test` | 578 tests |
+| Backend (integración, DB real) | `cd backend && pnpm run test:integration` | 12 tests |
+| Frontend | `cd frontend && pnpm test` | 103 tests |
 | E2E | `pnpm run e2e` | Playwright con Chromium |
+
+> Los tests de integración ejecutan la cadena completa contra PostgreSQL real: FEFO atómico `FOR UPDATE`, idempotencia offline (`ventas_sync`), cupones server-side y búsqueda sin acentos (migración `unaccent`).
 
 ---
 
@@ -232,6 +264,8 @@ cd frontend && pnpm run dev
 | [docs/security/compliance.md](docs/security/compliance.md) | Pentest, seguridad, INVIMA, persistencia DB |
 | [docs/deploy-guide.md](docs/deploy-guide.md) | Guía paso a paso para deploy en VPS con Docker |
 | [docs/monitoreo.md](docs/monitoreo.md) | Rutina operativa de monitoreo y checklist de deploy |
+| [docs/packaging-desktop.md](docs/packaging-desktop.md) | Empaquetado .exe/PWA: Tauri, Electron, configuración de servidor |
+| [docs/adr/0004-pos-offline-first.md](docs/adr/0004-pos-offline-first.md) | ADR del POS offline-first (outbox, idempotencia, fases) |
 
 ---
 

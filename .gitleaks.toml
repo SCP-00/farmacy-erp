@@ -1,6 +1,10 @@
 # ══════════════════════════════════════════════════════════
 #  Gitleaks configuration — Farmacy secret scanning
-#  Uso: gitleaks detect --source . --config backend/.gitleaks.toml -v
+#
+#  gitleaks-action@v3 solo autodetecta .gitleaks.toml en la RAÍZ del repo;
+#  con la config en backend/ el scan corría con las reglas por defecto y
+#  el allowlist de tests nunca aplicó (falsos positivos sobre UUIDs).
+#  Uso manual: gitleaks detect --source . --config .gitleaks.toml -v
 # ══════════════════════════════════════════════════════════
 
 title = "Farmacy secret scanning config"

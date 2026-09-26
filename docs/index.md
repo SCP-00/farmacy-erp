@@ -22,6 +22,9 @@ This folder is the living documentation hub for Farmacy (SGF).
 - 🌐 **Features**:
   - [B2C — Tienda en Línea](features/b2c.md) — Catálogo, autenticación, persistencia, puntos de fidelidad
   - [💳 Pagos — Pasarelas y Efectivo](features/payments.md) — Wompi, Stripe, MercadoPago, efectivo, puntos, contra entrega
+- 📦 **Distribución**:
+  - [Empaquetado escritorio y PWA](packaging-desktop.md) — Instalador Tauri (.exe), Electron portable, PWA instalable; conexión del POS a servidores en nube/LAN/local
+  - [ADR-0004 — POS offline-first](adr/0004-pos-offline-first.md) — Outbox IndexedDB, idempotencia de ventas, cola de excepciones
 - 🔒 **Security**:
   - [Seguridad y Compliance](security/compliance.md) — Pentest, medidas, INVIMA, persistencia DB
 
