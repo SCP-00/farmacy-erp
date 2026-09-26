@@ -1,6 +1,7 @@
 packages:
   - 'backend'
   - 'frontend'
+  - 'desktop'
 
 overrides:
   esbuild: '>=0.24.3'
@@ -9,6 +10,7 @@ overrides:
 onlyBuiltDependencies:
   - '@prisma/client'
   - '@prisma/engines'
+  - electron
   - esbuild
   - prisma
 
@@ -16,6 +18,7 @@ allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
   '@scarf/scarf': false
+  electron: true
   esbuild: true
   msgpackr-extract: true
   prisma: true

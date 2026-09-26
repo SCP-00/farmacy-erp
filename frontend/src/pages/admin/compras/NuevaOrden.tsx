@@ -24,7 +24,7 @@ interface ItemOC {
 type CampoForm = 'proveedorId' | 'fechaEntrega' | 'notas'
 type ErroresForm = Partial<Record<CampoForm, string>>
 
-function validarCampo(campo: CampoForm, valor: string, items: ItemOC[]): string {
+function validarCampo(campo: CampoForm, valor: string, _items: ItemOC[]): string {
   switch (campo) {
     case 'proveedorId':
       if (!valor) return 'Selecciona un proveedor'

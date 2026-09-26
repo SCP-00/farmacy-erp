@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Search, Filter, Clock, User, Shield, Activity,
-  Download, Calendar, RefreshCw, FileText,
+  Search, Filter, Clock, Shield, Activity,
+  Download, RefreshCw,
 } from 'lucide-react'
 import { auditoriaService } from '@/services'
 import { useFormateo } from '@/hooks'

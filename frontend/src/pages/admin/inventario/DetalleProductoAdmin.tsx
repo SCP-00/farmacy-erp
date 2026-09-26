@@ -1,9 +1,9 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ArrowLeft, FileText, AlertTriangle, Info, ShieldAlert,
-  Pill, FlaskConical, Eye, Scale, CalendarDays, Building2,
-  Hash, Activity, Ban, ScrollText, Syringe, Package,
+  ArrowLeft, FileText, AlertTriangle,
+  Pill, FlaskConical, Eye,
+  Hash, Activity, Syringe, Package,
   History, RotateCcw, Clock,
 } from 'lucide-react'
 import { productosService, auditoriaService } from '@/services'

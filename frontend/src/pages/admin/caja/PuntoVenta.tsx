@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff } from 'lucide-react'
+import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff, CloudOff, RefreshCw, AlertTriangle, RadioTower } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { productosService, ventasService, cajaService, chatbotService } from '@/services'
+import { productosService, cajaService, chatbotService } from '@/services'
+import { encolarVenta, sincronizarOutbox, listarVentas, pendientes, type VentaOutbox } from '@/services/outboxOffline'
 import { useFormateo, useDebounce, useScanner, useWS } from '@/hooks'
 import type { WSEvent } from '@/hooks'
 import { CATEGORIAS_ICONOS, METODO_PAGO_LABEL } from '@/config/constants'
 import { useAuthStore } from '@/store/authStore'
 import { fuzzyFilterProductos } from '@/utils/fuzzySearch'
+import ColaExcepciones from '@/components/shared/ColaExcepciones'
 import InvoicePreview from './InvoicePreview'
 import InteractionAlertModal from '@/components/shared/InteractionAlertModal'
 
@@ -33,6 +35,10 @@ export default function PuntoVenta() {
   
   // Estado para la factura (tirilla)
   const [facturaVisible, setFacturaVisible] = useState<any>(null)
+
+  // Cola de excepciones del outbox (revisión humana)
+  const [colaVisible, setColaVisible] = useState(false)
+  const [ventasExcepcion, setVentasExcepcion] = useState<VentaOutbox[]>([])
 
   // ── Interacción clínica ─────────────────────────────────
   const [alertasInteraccion, setAlertasInteraccion] = useState<any[] | null>(null)
@@ -64,6 +70,41 @@ export default function PuntoVenta() {
   }, [qc])
 
   const { conectado: wsConectado } = useWS({ onEvent: handleWSEvent })
+
+  // ── Outbox offline (ADR 0004 fase 1): sync automático + estado ──
+  const [outboxPendientes, setOutboxPendientes] = useState(0)
+  const [outboxErrores, setOutboxErrores] = useState(0)
+
+  const refrescarOutbox = useCallback(async () => {
+    const cola = await pendientes()
+    setOutboxPendientes(cola.filter(v => v.estado === 'PENDIENTE').length)
+    const errores = cola.filter(v => v.estado === 'ERROR')
+    setOutboxErrores(errores.length)
+    setVentasExcepcion(errores)
+  }, [])
+
+  useEffect(() => {
+    let cancelado = false
+    const intentarSync = async () => {
+      if (navigator.onLine) {
+        const n = await sincronizarOutbox()
+        if (n > 0 && !cancelado) {
+          toast.success(`${n} venta${n > 1 ? 's' : ''} offline sincronizada${n > 1 ? 's' : ''}`)
+          qc.invalidateQueries({ queryKey: ['dashboard'] })
+          qc.invalidateQueries({ queryKey: ['productos'] })
+        }
+      }
+      if (!cancelado) await refrescarOutbox()
+    }
+    intentarSync()
+    window.addEventListener('online', intentarSync)
+    const intervalo = setInterval(intentarSync, 30_000)
+    return () => {
+      cancelado = true
+      window.removeEventListener('online', intentarSync)
+      clearInterval(intervalo)
+    }
+  }, [qc, refrescarOutbox])
 
   const { data: cajaActual } = useQuery({
     queryKey: ['caja', 'actual'],
@@ -115,7 +156,15 @@ export default function PuntoVenta() {
   }
 
   // ── Verificar interacciones antes de cobrar ────────────
+  // El click en "Cobrar" es la confirmación normal del POS (fricción 0
+  // para el flujo diario). Se pide confirmación EXTRA solo cuando hay
+  // descuento aplicado: es la operación que toca el margen sin dejar
+  // rastro de aprobación.
   const handleCobrarClick = async () => {
+    if (descuento > 0) {
+      const ok = window.confirm(`Cobro con descuento de ${cop(descuento)}\n\nTotal a cobrar: ${cop(total)}\n¿Confirmar?`)
+      if (!ok) return
+    }
     if (carrito.length < 2) {
       // Sin interacciones posibles, cobrar directamente
       ventaMutation.mutate()
@@ -147,34 +196,54 @@ export default function PuntoVenta() {
     setAlertasInteraccion(null)
   }
 
+  // ── Cobro vía outbox offline (ADR 0004 fase 1) ──────────
+  // La venta SIEMPRE se guarda primero en IndexedDB con su UUID de
+  // idempotencia: si hay red sale al instante; si no, el sync la envía
+  // cuando vuelva (reintento con backoff, sin duplicar stock gracias a
+  // la tabla ventas_sync del backend).
   const ventaMutation = useMutation({
-    mutationFn: () => ventasService.registrar({
-      sucursalId: empleado?.sucursalId ?? 1,
-      cajaId: cajaId ?? undefined,
-      clienteId: clienteId || undefined,
-      metodoPago: metodo,
-      descuento,
-      items: carrito.map(i => ({ productoId: i.productoId, cantidad: i.cantidad, precioUnitario: i.precioUnitario, descuento: 0 })),
-    }),
+    mutationFn: async (): Promise<VentaOutbox> => {
+      const encolada = await encolarVenta({
+        sucursalId: empleado?.sucursalId ?? 1,
+        cajaId: cajaId ?? undefined,
+        clienteId: clienteId || undefined,
+        metodoPago: metodo,
+        descuento,
+        items: carrito.map(i => ({ productoId: i.productoId, cantidad: i.cantidad, precioUnitario: i.precioUnitario, descuento: 0 })),
+      })
+      // Con red: envío inmediato de toda la cola (incluida esta venta)
+      if (navigator.onLine) await sincronizarOutbox()
+      const actualizada = (await listarVentas()).find(v => v.idempotencyKey === encolada.idempotencyKey)
+      return actualizada ?? encolada
+    },
     onSuccess: (data) => {
-      toast.success('Venta registrada exitosamente')
-      qc.invalidateQueries({ queryKey: ['dashboard'] })
-      qc.invalidateQueries({ queryKey: ['productos'] })
-      
-      // Mostrar tirilla
+      if (data.estado === 'SINCRONIZADA') {
+        toast.success(`Venta #${data.ventaNum} registrada exitosamente`)
+        qc.invalidateQueries({ queryKey: ['dashboard'] })
+        qc.invalidateQueries({ queryKey: ['productos'] })
+      } else if (data.estado === 'PENDIENTE') {
+        toast('Sin conexión: venta en cola offline, se sincronizará sola', { icon: '📡' })
+      } else {
+        // Rechazo del server (stock, cupón vencido...): cola de excepciones
+        toast.error(`Venta en cola de excepciones: ${data.ultimoError ?? 'revisar sync'}`)
+      }
+
+      // Mostrar tirilla — el cobro ya ocurrió en caja
       setFacturaVisible({
-        numero: data.ventaNum,
+        numero: data.ventaNum ?? `OFF-${data.idempotencyKey.slice(0, 8).toUpperCase()}`,
         fecha: new Date(),
         cajero: empleado?.nombre,
         items: [...carrito],
         subtotal,
         descuento,
-        total: data.total,
+        total,
         metodoPago: metodo
       })
+      refrescarOutbox()
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.error ?? 'Error al registrar venta')
+      // Aquí solo llega si falló la escritura local (IndexedDB)
+      toast.error(err?.message ?? 'No se pudo registrar la venta')
     },
   })
 
@@ -253,6 +322,39 @@ export default function PuntoVenta() {
         />
       )}
 
+      {/* Estado de sincronización offline — VISIBLE EN TODOS LOS TAMAÑOS:
+          el cajero en móvil/tablet sin red debe saber que sus ventas
+          están seguras en la cola y cuántas requieren su revisión */}
+      {outboxErrores > 0 && (
+        <button
+          onClick={() => setColaVisible(true)}
+          className="w-full mb-2 px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 flex items-center justify-between gap-3 transition-colors hover:bg-red-100/70 dark:hover:bg-red-900/30"
+        >
+          <span className="flex items-center gap-2 text-xs font-semibold text-red-700 dark:text-red-300">
+            <AlertTriangle size={14} className="flex-shrink-0" />
+            {outboxErrores} venta{outboxErrores !== 1 ? 's' : ''} requiere{outboxErrores !== 1 ? 'n' : ''} revisión — no se envió al server
+          </span>
+          <span className="text-[11px] font-semibold text-red-700 dark:text-red-300 underline underline-offset-2">Revisar cola</span>
+        </button>
+      )}
+      {outboxPendientes > 0 && (
+        <div className="w-full mb-2 px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-300 min-w-0">
+            <RadioTower size={14} className="flex-shrink-0 animate-pulse-soft" />
+            <span className="truncate">Sin conexión: {outboxPendientes} venta{outboxPendientes !== 1 ? 's' : ''} en cola — se envía{outboxPendientes !== 1 ? 'n' : ''} sola al reconectar</span>
+          </span>
+          <span className="text-[10px] font-mono text-amber-600/80 dark:text-amber-300/60 flex-shrink-0 hidden sm:inline">guardo primero · envío después</span>
+        </div>
+      )}
+
+      {colaVisible && (
+        <ColaExcepciones
+          ventas={ventasExcepcion}
+          onClose={() => setColaVisible(false)}
+          onCambio={refrescarOutbox}
+        />
+      )}
+
       {/* Shortcuts hint + WS status (solo desktop) */}
       <div className="hidden md:flex items-center gap-2 mb-2 text-[10px] text-gray-400 dark:text-dark-text/40 px-1">
         {wsConectado ? (
@@ -314,7 +416,6 @@ export default function PuntoVenta() {
           </div>
         </div>
 
-        {/* Panel derecho: carrito y cobro */}
         {/* Panel derecho: carrito y cobro */}
         <div className="w-full lg:w-80 flex-shrink-0 bg-white dark:bg-dark-surface border-l border-[#D8EBE4] dark:border-dark-border flex flex-col">
           <div className="px-4 py-3 border-b border-[#D8EBE4] dark:border-dark-border flex items-center justify-between">

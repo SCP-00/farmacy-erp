@@ -678,7 +678,8 @@ describe('POST /interacciones', () => {
     expect(res.body.data.tieneAlertas).toBe(true)
     expect(res.body.data.alertas).toHaveLength(1)
     expect(res.body.data.alertas[0].severidad).toBe('ALTA')
-    expect(mockInteracciones.verificarInteracciones).toHaveBeenCalledWith(['prod-1', 'prod-2'])
+    // Ahora pasa también los alérgenos del perfil (undefined si no se envían)
+    expect(mockInteracciones.verificarInteracciones).toHaveBeenCalledWith(['prod-1', 'prod-2'], undefined)
   })
 
   it('retorna sin alertas si no hay interacciones', async () => {

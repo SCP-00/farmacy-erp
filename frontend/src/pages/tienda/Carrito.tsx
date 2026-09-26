@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { ArrowLeft, CheckCircle, Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import { useCarritoStore } from '@/store/carritoStore'
 import SEOHead from '@/components/shared/SEOHead'

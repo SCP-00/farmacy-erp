@@ -1,7 +1,7 @@
 // ══════════════════════════════════════════════════════════
 //  authStore.test.ts — Tests de autenticación (empleado + cliente)
 // ══════════════════════════════════════════════════════════
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { useAuthStore, useAuthClienteStore } from './authStore'
 import { useCarritoStore } from './carritoStore'
 

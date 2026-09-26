@@ -27,7 +27,7 @@ export function Header() {
   const [busquedaAbierta, setBusquedaAbierta] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const navigate = useNavigate()
-  const location = useLocation()
+  const _disabled_location = useLocation() // eslint: unused
   
   const totalItems = useCarritoStore((state: any) => state.totalItems())
   const { cliente, cerrarSesion } = useAuthClienteStore()

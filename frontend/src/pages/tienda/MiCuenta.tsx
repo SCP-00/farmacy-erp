@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authClienteService, clientesService } from '@/services'
 import {
-  User, Heart, Coins, AlertTriangle, Stethoscope, Pill,
-  Save, RotateCcw, CheckCircle, Info, ShieldAlert
+  User, Heart, Coins, AlertTriangle, Stethoscope,
+  Save, RotateCcw, CheckCircle, Info,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useFormateo } from '@/hooks'
@@ -12,7 +12,7 @@ type TabPerfil = 'datos' | 'salud' | 'puntos'
 
 export default function MiCuenta() {
   const qc = useQueryClient()
-  const { cop } = useFormateo()
+  const { cop: _cop } = useFormateo()
   const { data: cliente, isLoading } = useQuery({ queryKey: ['cliente', 'me'], queryFn: authClienteService.me })
   const { data: perfilSalud } = useQuery({
     queryKey: ['cliente', 'salud'],
@@ -62,7 +62,7 @@ export default function MiCuenta() {
   const mutationSalud = useMutation({
     mutationFn: (payload: { alergenos?: string[]; condiciones?: string[] }) =>
       clientesService.actualizarSalud(payload),
-    onSuccess: (data) => {
+    onSuccess: (_data) => {
       toast.success('Perfil de salud actualizado')
       qc.invalidateQueries({ queryKey: ['cliente', 'salud'] })
     },

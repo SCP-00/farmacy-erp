@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Search, Filter, Package, User, FileText, AlertTriangle } from 'lucide-react'
+import { Filter, Package, User, FileText } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { inventarioService } from '@/services'
 import { useFormateo } from '@/hooks'
@@ -19,7 +19,7 @@ const TIPO_MOVIMIENTO_LABEL: Record<string, string> = {
 }
 
 export default function Movimientos() {
-  const { fechaCorta, fechaHora } = useFormateo()
+  const { fechaHora } = useFormateo()
   const [movs, setMovs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [filtroTipo, setFiltroTipo] = useState('')

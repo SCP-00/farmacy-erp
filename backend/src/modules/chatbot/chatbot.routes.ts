@@ -423,12 +423,6 @@ async function procesarBusqueda(mensaje: string): Promise<{
 async function procesarInteracciones(mensaje: string, sesion: SesionData): Promise<{
   respuesta: string; productos: any[]; alertas: any[]
 }> {
-  // Extraer nombres de medicamentos del mensaje
-  const palabras = mensaje
-    .split(/[,\s]+/)
-    .filter((p: string) => p.length >= 3)
-    .slice(0, 8)
-
   // Buscar productos que coincidan
   const encontrados = await buscarProductos(mensaje)
   const ids = encontrados.map(p => p.id)
@@ -820,7 +814,7 @@ async function manejarBusqueda(message: string, sesion: SesionData): Promise<{
 }
 
 // ── Manejar estado 'interacciones' ────────────────────────
-async function manejarInteracciones(message: string, sesion: SesionData): Promise<{
+async function manejarInteracciones(message: string, _sesion: SesionData): Promise<{
   respuesta: string; productos: any[]; alertas: any[]; nuevoEstado: EstadoMenu
 }> {
   const msg = message.trim().toLowerCase()
@@ -829,12 +823,12 @@ async function manejarInteracciones(message: string, sesion: SesionData): Promis
     return { respuesta: MENU_PRINCIPAL, productos: [], alertas: [], nuevoEstado: 'menu' }
   }
 
-  const result = await procesarInteracciones(message, sesion)
+  const result = await procesarInteracciones(message, _sesion)
   return { ...result, nuevoEstado: 'interacciones' }
 }
 
 // ── Manejar estado 'alternativas' ─────────────────────────
-async function manejarAlternativas(message: string, sesion: SesionData): Promise<{
+async function manejarAlternativas(message: string, _sesion: SesionData): Promise<{
   respuesta: string; productos: any[]; alertas: any[]; nuevoEstado: EstadoMenu
 }> {
   const msg = message.trim().toLowerCase()
@@ -848,7 +842,7 @@ async function manejarAlternativas(message: string, sesion: SesionData): Promise
 }
 
 // ── Manejar estado 'info' ─────────────────────────────────
-async function manejarInfo(message: string, sesion: SesionData): Promise<{
+async function manejarInfo(message: string, _sesion: SesionData): Promise<{
   respuesta: string; productos: any[]; alertas: any[]; nuevoEstado: EstadoMenu
 }> {
   const msg = message.trim().toLowerCase()
@@ -862,7 +856,7 @@ async function manejarInfo(message: string, sesion: SesionData): Promise<{
 }
 
 // ── Manejar estado 'faq' ──────────────────────────────────
-async function manejarFAQ(message: string, sesion: SesionData): Promise<{
+async function manejarFAQ(message: string, _sesion: SesionData): Promise<{
   respuesta: string; productos: any[]; alertas: any[]; nuevoEstado: EstadoMenu
 }> {
   const msg = message.trim().toLowerCase()
@@ -992,6 +986,7 @@ chatbotRouter.get('/horario', (_req: Request, res: Response) => {
 // ── POST /interacciones ───────────────────────────────────
 chatbotRouter.post('/interacciones', validarCuerpo(interaccionesSchema), async (req: Request, res: Response) => {
   const { productoIds, alergenosCliente } = req.body as z.infer<typeof interaccionesSchema>
+  // Los alérgenos del perfil de salud ahora se verifican contra los productos
   // Sanitizar productoIds (defense-in-depth: asegurar formato UUID)
   const idsLimpios = productoIds
     .map((id: string) => id.replace(/[^a-zA-Z0-9\-]/g, '').slice(0, 36))
@@ -1000,7 +995,7 @@ chatbotRouter.post('/interacciones', validarCuerpo(interaccionesSchema), async (
     return responder.error(res, 'Se requieren al menos dos productos para verificar interacciones')
   }
   try {
-    const resultado = await verificarInteracciones(idsLimpios)
+    const resultado = await verificarInteracciones(idsLimpios, alergenosCliente)
     return responder.ok(res, {
       alertas: resultado.alertas,
       tieneAlertas: resultado.tieneAlertas,

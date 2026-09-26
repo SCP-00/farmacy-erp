@@ -3,7 +3,7 @@
 //  Mantiene conexiones abiertas y distribuye eventos del
 //  EventBus a los clientes conectados.
 // ══════════════════════════════════════════════════════════
-import { Request, Response } from 'express'
+import type { Response } from 'express'
 import { eventBus, EventoDominio, Eventos, type PayloadEvento } from './eventbus.service'
 import { logger } from '../utils/logger'
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, User, Mail, Calendar, Coins, ShoppingBag, CreditCard, ChevronDown, ChevronUp, Package } from 'lucide-react'
+import { ArrowLeft, User, Calendar, Coins, ShoppingBag, CreditCard, ChevronDown, ChevronUp, Package } from 'lucide-react'
 import { clientesService } from '@/services'
 import { useFormateo } from '@/hooks'
 

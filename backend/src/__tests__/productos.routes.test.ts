@@ -48,6 +48,8 @@ const mockPrisma = vi.hoisted(() => ({
   alertaInventario: { findMany: vi.fn(), create: vi.fn(), deleteMany: vi.fn(), update: vi.fn(), count: vi.fn() },
   loteVenta: { create: vi.fn(), createMany: vi.fn() },
   detalleVenta: { create: vi.fn(), createMany: vi.fn() },
+  // Subquery unaccent de búsqueda (migración 0005) — vacío = sin matches
+  $queryRaw: vi.fn(async () => [] as Array<{ id: string }>),
   $transaction: vi.fn(),
 }))
 
@@ -144,6 +146,35 @@ describe('Productos Routes - GET /productos/buscar (público)', () => {
     mockPrisma.producto.findMany.mockResolvedValue([createMockProducto()])
     const res = await supertest(app).get(`${apiPrefix}/productos/buscar?q=acetaminofen`)
     expect(res.status).toBe(200)
+  })
+
+  it('búsqueda SIN acentos: "acetaminofen" encuentra "Acetaminofén" (migración 0005)', async () => {
+    mockCache.get.mockResolvedValue(null)
+    // La subquery unaccent devuelve el id del producto con tilde
+    mockPrisma.$queryRaw.mockResolvedValue([{ id: 'prod-acento' }])
+    mockPrisma.producto.count.mockResolvedValue(1)
+    mockPrisma.producto.findMany.mockResolvedValue([createMockProducto({ id: 'prod-acento' })])
+
+    const res = await supertest(app).get(`${apiPrefix}/productos/buscar?q=acetaminofen`)
+    expect(res.status).toBe(200)
+    // La subquery recibió el término normalizado (sin acentos, LIKE %...%)
+    const valoresPrimera = mockPrisma.$queryRaw.mock.calls[0].slice(1)
+    expect(valoresPrimera).toContain('%acetaminofen%')
+    // El where del findMany filtra por los ids de la subquery
+    const whereArg = mockPrisma.producto.findMany.mock.calls[0][0].where
+    expect(whereArg.id.in).toEqual(['prod-acento'])
+  })
+
+  it('búsqueda CON acentos: el término se normaliza igual ("Acetaminofén" → %acetaminofen%)', async () => {
+    mockCache.get.mockResolvedValue(null)
+    mockPrisma.$queryRaw.mockResolvedValue([{ id: 'prod-acento' }])
+    mockPrisma.producto.count.mockResolvedValue(1)
+    mockPrisma.producto.findMany.mockResolvedValue([createMockProducto()])
+
+    const res = await supertest(app).get(`${apiPrefix}/productos/buscar?q=${encodeURIComponent('Acetaminofén')}`)
+    expect(res.status).toBe(200)
+    const valoresSegunda = mockPrisma.$queryRaw.mock.calls[0].slice(1)
+    expect(valoresSegunda).toContain('%acetaminofen%')
   })
 
   it('filtra por categoría', async () => {

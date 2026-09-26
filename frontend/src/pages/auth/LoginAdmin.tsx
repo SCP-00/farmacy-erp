@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Eye, EyeOff, Lock, Mail } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail, Plus, Server } from 'lucide-react'
 import { useAuth } from '@/hooks'
+import { API_URL_COMPILADA, API_URL_LOCALSTORAGE, resolverBaseUrl } from '@/config/api'
 
 export default function LoginAdmin() {
   const { login, loginLoading } = useAuth()
@@ -10,19 +11,67 @@ export default function LoginAdmin() {
   const [verPass,  setVerPass]  = useState(false)
   const [error,    setError]    = useState('')
 
+  // Servidor API configurable en builds de escritorio (Tauri/Electron):
+  // el farmacéuta apunta su POS al servidor de su empresa una sola vez.
+  // En web compilada contra nube (VITE_API_URL) el campo no aplica.
+  const [servidor, setServidor] = useState(() => {
+    const base = resolverBaseUrl()
+    return base.startsWith('http') ? base : ''
+  })
+  const mostrarServidor = !API_URL_COMPILADA
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     if (!email || !password) { setError('Completa todos los campos'); return }
+    if (mostrarServidor && servidor.trim()) {
+      try {
+        // Validar formato antes de guardarlo: evita dejar el POS apuntando a una URL rota
+        const url = new URL(servidor.trim())
+        if (!url.protocol.startsWith('http')) throw new Error('protocolo')
+        localStorage.setItem(API_URL_LOCALSTORAGE, url.origin + (url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '')))
+      } catch {
+        setError('URL del servidor inválida (ejemplo: https://api.mi-farmacia.com)')
+        return
+      }
+    }
     login({ email, password })
   }
 
   return (
     <>
+      {/* Marca: cruz farmacéutica en espacio negativo */}
+      <div className="relative mx-auto mb-5 flex h-16 w-16 items-center justify-center overflow-hidden rounded-3xl bg-teal-700 shadow-md" aria-hidden="true">
+        <Plus size={36} className="text-white" strokeWidth={2.5} />
+        <span className="absolute -bottom-3 -right-3 h-8 w-8 rounded-full bg-white/10" />
+      </div>
+
       <h2 className="text-xl font-semibold text-gray-900 mb-1">Acceso empleados</h2>
       <p className="text-sm text-gray-500 mb-7">Ingresa con tus credenciales de Farmacy</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Servidor API (solo builds de escritorio / LAN) */}
+        {mostrarServidor && (
+          <div>
+            <label htmlFor="admin-servidor" className="block text-sm font-medium text-gray-700 mb-1.5">
+              Servidor de la empresa
+            </label>
+            <div className="relative">
+              <Server size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"/>
+              <input
+                id="admin-servidor"
+                type="url"
+                value={servidor}
+                onChange={e => setServidor(e.target.value)}
+                placeholder="https://api.mi-farmacia.com  (vacío = este equipo)"
+                autoComplete="url"
+                className="input-base pl-10"
+              />
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">Déjalo vacío para usar el servidor local instalado</p>
+          </div>
+        )}
+
         {/* Email */}
         <div>
           <label htmlFor="admin-email" className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -90,15 +139,18 @@ export default function LoginAdmin() {
         </button>
       </form>
 
-      {/* Credenciales de prueba */}
-      <div className="mt-6 p-4 bg-teal-50 rounded-2xl border border-teal-100">
-        <p className="text-xs font-semibold text-teal-800 mb-2">🔐 Credenciales de prueba</p>
-        <div className="space-y-1 text-xs text-teal-700 font-mono">
-          <p>admin@farmacy.co / Admin@1234</p>
-          <p>farmaceuta@farmacy.co / Farm@1234</p>
-          <p>auxiliar@farmacy.co / Aux@1234</p>
+      {/* Credenciales de prueba — SOLO en desarrollo: en producción
+          un login no debe publicitar cuentas (riesgo de seguridad) */}
+      {import.meta.env.DEV && (
+        <div className="mt-6 p-4 bg-teal-50 rounded-2xl border border-teal-100">
+          <p className="text-xs font-semibold text-teal-800 mb-2">🔐 Credenciales de prueba (solo desarrollo)</p>
+          <div className="space-y-1 text-xs text-teal-700 font-mono">
+            <p>admin@farmacy.co / Admin@1234</p>
+            <p>farmaceuta@farmacy.co / Farm@1234</p>
+            <p>auxiliar@farmacy.co / Aux@1234</p>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="mt-4 text-center">
         <Link to="/" className="text-sm text-gray-400 hover:text-teal-700 transition-colors">

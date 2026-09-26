@@ -52,16 +52,21 @@ if ! command -v node &>/dev/null; then
 fi
 echo "    Node.js detectado: $(node --version)"
 
-# Verificar pnpm
+# Verificar pnpm — directo → corepack → fallback npm
+# (la nueva API de corepack a veces no expone shims globales; el fallback
+#  via npm siempre funciona)
 if ! command -v pnpm &>/dev/null; then
     echo ""
-    echo "  [INFO] pnpm no encontrado. Instalando via corepack..."
-    corepack enable pnpm
+    echo "  [INFO] pnpm no encontrado. Intentando via corepack..."
+    corepack enable pnpm 2>/dev/null || true
+    corepack prepare pnpm@11 --activate 2>/dev/null || true
     if ! command -v pnpm &>/dev/null; then
-        echo "  [ERROR] No se pudo activar pnpm via corepack."
-        echo "  Ejecuta manualmente: corepack enable pnpm"
-        echo "  Mas info: https://pnpm.io/installation"
-        exit 1
+        echo "  [INFO] corepack no expuso pnpm. Instalando via npm (fallback)..."
+        npm install -g pnpm@11 || {
+            echo "  [ERROR] No se pudo instalar pnpm."
+            echo "  Instalalo manualmente: npm i -g pnpm  o  https://pnpm.io/installation"
+            exit 1
+        }
     fi
 fi
 echo "    pnpm detectado:     v$(pnpm --version)"

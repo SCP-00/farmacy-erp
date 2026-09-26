@@ -8,7 +8,7 @@
 //  POST /api/v1/pagos/mercadopago/webhook
 //  POST /api/v1/pagos/efectivo/registrar   (solo empleados)
 // ══════════════════════════════════════════════════════════
-import { Router, Request, Response, raw } from 'express'
+import { Router, Request, Response } from 'express'
 import Stripe from 'stripe'
 import { MercadoPagoConfig, Preference } from 'mercadopago'
 import crypto from 'crypto'
@@ -25,9 +25,10 @@ const webhookIpAllowlist = env.WEBHOOK_IP_ALLOWLIST
   : []
 const verificarIpWebhook = verificarIpPermitida(webhookIpAllowlist)
 
-// ── Anti-replay: caché en memoria de nonces/timestamps ────
+// ── Anti-replay: caché en memoria de nonces ────
+// La expiración real la da el timestamp del evento (validarTimestampWebhook);
+// el Set se limpia por tamaño para acotar memoria.
 const webhookNonces = new Set<string>()
-const WEBHOOK_NONCE_TTL_MS = 5 * 60 * 1000 // 5 minutos
 
 function limpiarNoncesViejos() {
   if (webhookNonces.size > 10000) webhookNonces.clear()
@@ -86,7 +87,9 @@ const mpClient = env.MERCADOPAGO_ACCESS_TOKEN
 
 // ── WOMPI ─────────────────────────────────────────────────
 pagosRouter.post('/wompi/crear', autenticarCliente, async (req: Request, res: Response) => {
-  const { pedidoId, ventaId, monto, moneda = 'COP' } = req.body
+  // HARDENING: el monto NUNCA viene del cliente — se toma SIEMPRE de la DB.
+  // Antes: `monto || total` permitía pagar $1 por una venta de $100.000 con firma válida.
+  const { pedidoId, ventaId, moneda = 'COP' } = req.body
 
   if (!env.WOMPI_PRIVATE_KEY) {
     return responder.error(res, 'Wompi no configurado en este ambiente', 503)
@@ -121,7 +124,8 @@ pagosRouter.post('/wompi/crear', autenticarCliente, async (req: Request, res: Re
     }
 
     const referencia       = `FARMACY-${numero}-${Date.now()}`
-    const montoEnCentavos  = Math.round((monto || total) * 100)
+    // Monto server-side: SIEMPRE el total de la venta/pedido en DB
+    const montoEnCentavos  = Math.round(total * 100)
     // La firma se genera HMAC-SHA256(reference + amountInCents + currency, integrity_key)
     // Según documentación de Wompi: el payload del HMAC es solo reference + amount + currency
     const integrityKey     = env.WOMPI_INTEGRITY_SECRET || ''
@@ -345,25 +349,45 @@ pagosRouter.post('/stripe/webhook', verificarIpWebhook, limitarWebhook, async (r
 // ── MERCADO PAGO ──────────────────────────────────────────
 pagosRouter.post('/mercadopago/crear', autenticarCliente, async (req: Request, res: Response) => {
   if (!mpClient) return responder.error(res, 'MercadoPago no configurado', 503)
-  const { pedidoId, ventaId, items, monto, clienteEmail } = req.body
+  // HARDENING: monto server-side — se ignora cualquier monto enviado por el cliente
+  const { pedidoId, ventaId, clienteEmail } = req.body
 
   try {
-    // Soporta tanto pedidoOnline como venta directa desde checkout
     let email = clienteEmail
-    let total = monto ? Number(monto) : 0
-    let referenciaExterna = ventaId || pedidoId || `FARMACY-CHECKOUT-${Date.now()}`
+    let total = 0
+    let items: any[] = []
+    let referenciaExterna = ventaId || pedidoId || ''
 
-    if (pedidoId) {
+    if (ventaId) {
+      const venta = await prisma.venta.findUnique({
+        where: { id: ventaId },
+        include: {
+          cliente: { select: { email: true } },
+          detalles: { include: { producto: { select: { nombre: true } } } },
+        },
+      })
+      if (!venta) return responder.noEncontrado(res, 'Venta')
+      email = venta.cliente?.email || clienteEmail
+      total = Number(venta.total)
+      items = venta.detalles.map((d: any) => ({
+        title: d.producto?.nombre ?? `Producto ${d.productoId}`,
+        quantity: d.cantidad,
+        unit_price: Number(d.precioUnitario),
+      }))
+    } else if (pedidoId) {
       const pedido = await prisma.pedidoOnline.findUnique({ where: { id: pedidoId }, include: { cliente: { select: { email: true } } } })
       if (!pedido) return responder.noEncontrado(res, 'Pedido')
       email = pedido.cliente.email
       total = Number(pedido.total)
+      items = [{ title: `Pedido #${pedido.numero}`, quantity: 1, unit_price: total }]
+    } else {
+      return responder.error(res, 'ventaId o pedidoId requerido', 400)
     }
 
     const preference = new Preference(mpClient)
     const response = await preference.create({
       body: {
-        items:              items.map((i: any) => ({ title: i.nombre, quantity: i.cantidad, unit_price: i.precioUnitario, currency_id: 'COP' })),
+        items,
         payer:              { email },
         external_reference: referenciaExterna,
         back_urls: {
@@ -400,10 +424,9 @@ pagosRouter.post('/mercadopago/crear', autenticarCliente, async (req: Request, r
 })
 
 pagosRouter.post('/mercadopago/webhook', verificarIpWebhook, limitarWebhook, async (req: Request, res: Response) => {
-  const { type, data, action } = req.body
+  const { type, data } = req.body
 
-  // Validar firma HMAC (MercadoPago envía x-signature y x-request-id)
-  const signature = req.headers['x-signature'] as string
+  // Idempotencia (MercadoPago envía x-request-id)
   const requestId = req.headers['x-request-id'] as string
 
   if (requestId && verificarIdempotencia(requestId)) {

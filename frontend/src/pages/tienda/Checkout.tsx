@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle, CreditCard, Lock, Tag, Coins, Building2, Banknote, Loader2, Wallet, AlertCircle, RefreshCw, XCircle, Info, ShoppingCart, Heart, Truck } from 'lucide-react'
 import { useCarritoStore } from '@/store/carritoStore'
 import { useQueryClient, useMutation, useQuery } from '@tanstack/react-query'
-import { clientesService, pagosService, chatbotService } from '@/services'
+import { clientesService, pagosService, chatbotService, cuponesService } from '@/services'
 import { useAuthCliente } from '@/hooks'
 import toast from 'react-hot-toast'
 import { METODO_PAGO_LABEL } from '@/config/constants'
@@ -201,6 +201,8 @@ function Checkout() {
   const [errorPago, setErrorPago] = useState<string>('')
   const [codigo, setCodigo] = useState('')
   const [descuento, setDescuento] = useState(0)
+  const [cuponAplicado, setCuponAplicado] = useState<string | null>(null)
+  const [validandoCupon, setValidandoCupon] = useState(false)
   const [usarPuntos, setUsarPuntos] = useState(false)
 
   // ── Detectar cambio de usuario y limpiar datos de envío ──
@@ -217,6 +219,20 @@ function Checkout() {
       clienteIdRef.current = undefined
     }
   }, [cliente?.id])
+  // Persistir datos de envío en localStorage
+  useEffect(() => {
+    if (paso === 'datos' || paso === 'pago') {
+      localStorage.setItem(DATOS_STORAGE_KEY, JSON.stringify(datos))
+    }
+  }, [datos, paso])
+
+  // Limpiar localStorage al completar la compra exitosamente
+  useEffect(() => {
+    if (paso === 'confirmacion') {
+      localStorage.removeItem(DATOS_STORAGE_KEY)
+    }
+  }, [paso])
+
 
   const sub = subtotal()
   const saldoPts = (cliente as unknown as { puntos?: number })?.puntos ?? 0
@@ -293,22 +309,39 @@ function Checkout() {
     }
   }
 
-  const aplicarCodigo = () => {
-    if (codigo.toUpperCase() === 'FARMACY10') { setDescuento(sub * 0.10); toast.success('Codigo aplicado! 10% de descuento') }
-    else { toast.error('Codigo invalido o expirado'); setDescuento(0) }
+  // Descuento SIEMPRE server-side: el frontend solo envía el código y el
+  // carrito; el backend responde con el descuento real calculado con
+  // precios de DB. Nunca se envía un monto de descuento al backend.
+  const aplicarCodigo = async () => {
+    const codigoLimpio = codigo.trim()
+    if (!codigoLimpio) return
+    setValidandoCupon(true)
+    try {
+      const res = await cuponesService.validar(codigoLimpio, items.map(i => ({ productoId: i.productoId, cantidad: i.cantidad })))
+      setDescuento(res.descuento)
+      setCuponAplicado(res.codigo)
+      toast.success(`Cupón ${res.codigo} aplicado: -$${res.descuento.toLocaleString()}`)
+    } catch (err: any) {
+      setDescuento(0)
+      setCuponAplicado(null)
+      toast.error(err?.response?.data?.error ?? 'Cupón inválido o expirado')
+    } finally {
+      setValidandoCupon(false)
+    }
   }
 
   const ventaMut = useMutation({
     mutationFn: () => clientesService.comprar({
       metodoPago: metodoPago ?? 'EFECTIVO',
-      descuento,
+      codigoDescuento: cuponAplicado ?? undefined, // solo el CÓDIGO — el descuento lo calcula el backend
       puntosUsados: usarPuntos ? valPts : 0,
       ciudad: ciudadEnvio,
       direccionEnvio: datos.direccion,
-      items: items.map(i => ({ productoId: i.productoId, cantidad: i.cantidad, precioUnitario: i.precioUnitario })),
+      items: items.map(i => ({ productoId: i.productoId, cantidad: i.cantidad })), // sin precio: server-side
     }),
     onSuccess: (data: any) => {
-      setPedidoInfo({ numero: data?.numero ?? 0, total: data?.total ?? total, puntosGanados: data?.puntosGanados ?? ptsGanados, metodoPago: metodoPago ?? 'EFECTIVO' })
+      // Totales de referencia = los devueltos por el servidor (autoridad)
+      setPedidoInfo({ numero: data?.numero ?? 0, total: data?.total ?? total, puntosGanados: data?.puntosGanados ?? 0, metodoPago: metodoPago ?? 'EFECTIVO' })
       // Para pasarelas: no mostrar confirmación aún — el callback maneja el redirect
       if (metodoPago !== 'MERCADOPAGO' && metodoPago !== 'WOMPI' && metodoPago !== 'STRIPE') {
         limpiar(); qc.invalidateQueries({ queryKey: ['productos'] }); qc.invalidateQueries({ queryKey: ['cliente'] }); setPaso('confirmacion')
@@ -386,7 +419,7 @@ function Checkout() {
     const procesarPasarela = async (data: any) => {
       try {
         if (metodoPago === 'WOMPI') {
-          const wompiRes = await pagosService.crearWompi(data?.ventaId, total)
+          const wompiRes = await pagosService.crearWompi(data?.ventaId)
           if (wompiRes?.publicKey) {
             // Redirigir al checkout de Wompi con los parámetros necesarios
             const wompiUrl = `https://checkout.wompi.co/p/?public-key=${wompiRes.publicKey}&currency=${wompiRes.currency}&amount-in-cents=${wompiRes.amountInCents}&reference=${wompiRes.reference}&signature=${wompiRes.signature}&redirect-url=${encodeURIComponent(wompiRes.redirectUrl)}&customer-email=${encodeURIComponent(wompiRes.customerEmail)}`
@@ -405,12 +438,6 @@ function Checkout() {
         if (metodoPago === 'MERCADOPAGO') {
           const mpRes = await pagosService.crearMercadoPago({
             ventaId: data?.ventaId,
-            items: items.map(i => ({
-              nombre: i.nombre,
-              cantidad: i.cantidad,
-              precioUnitario: i.precioUnitario,
-            })),
-            monto: total,
             clienteEmail: datos.email,
           })
           if (mpRes?.initPoint) {
@@ -441,12 +468,6 @@ function Checkout() {
   const handleReintentar = () => {
     setPaso('pago')
     setErrorPago('')
-  }
-
-  const handleCancelarPago = () => {
-    setPaso('pago')
-    setErrorPago('')
-    setMetodoPago(null)
   }
 
   // ── Pantalla: carrito vacío ────────────────────────────────
@@ -481,19 +502,6 @@ function Checkout() {
     )
   }
 
-  // Persistir datos de envío en localStorage
-  useEffect(() => {
-    if (paso === 'datos' || paso === 'pago') {
-      localStorage.setItem(DATOS_STORAGE_KEY, JSON.stringify(datos))
-    }
-  }, [datos, paso])
-
-  // Limpiar localStorage al completar la compra exitosamente
-  useEffect(() => {
-    if (paso === 'confirmacion') {
-      localStorage.removeItem(DATOS_STORAGE_KEY)
-    }
-  }, [paso])
 
   // ── Pantalla: confirmación ─────────────────────────────────
   if (paso === 'confirmacion' && pedidoInfo) {
@@ -741,12 +749,12 @@ function Checkout() {
                 disabled={ventaMut.isPending || !codigo.trim()}
                 className="px-4 bg-slate-800 text-white text-sm font-medium rounded-xl hover:bg-slate-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {ventaMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aplicar'}
+                {validandoCupon || ventaMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Aplicar'}
               </button>
             </div>
-            {codigo.toUpperCase() === 'FARMACY10' && descuento > 0 && (
+            {cuponAplicado && descuento > 0 && (
               <p className="text-green-600 text-xs font-medium flex items-center gap-1">
-                <CheckCircle className="w-3 h-3" /> Descuento del 10% aplicado!
+                <CheckCircle className="w-3 h-3" /> Cupón {cuponAplicado} aplicado: -$${descuento.toLocaleString()}
               </p>
             )}
 

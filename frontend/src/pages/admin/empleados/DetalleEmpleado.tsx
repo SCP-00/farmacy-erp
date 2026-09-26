@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Mail, Shield, Calendar, Clock, CheckCircle, XCircle, Phone, MapPin, Edit3 } from 'lucide-react'
-import { ROLES } from '@/config/constants'
+import { } from '@/config/constants'
 import toast from 'react-hot-toast'
 
 const MOCK_EMPLEADO = {
@@ -26,7 +26,7 @@ const ROL_LABELS: Record<string, string> = {
 }
 
 export default function DetalleEmpleado() {
-  const { id } = useParams()
+  const { id: _id } = useParams()
   const [empleado, setEmpleado] = useState(MOCK_EMPLEADO)
 
   const toggleEstado = () => {

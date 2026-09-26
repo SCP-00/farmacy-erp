@@ -57,6 +57,7 @@ const ListaProductos     = lazy(() => import('@/pages/admin/inventario/ListaProd
 const GestionLotes       = lazy(() => import('@/pages/admin/inventario/GestionLotes'))
 const AlertasInventario  = lazy(() => import('@/pages/admin/inventario/AlertasInventario'))
 const Movimientos        = lazy(() => import('@/pages/admin/inventario/Movimientos'))
+const ImportarCatalogo   = lazy(() => import('@/pages/admin/inventario/ImportarCatalogo'))
 const DetalleProductoAdmin = lazy(() => import('@/pages/admin/inventario/DetalleProductoAdmin'))
 // Compras
 const OrdenesCompra      = lazy(() => import('@/pages/admin/compras/OrdenesCompra'))
@@ -147,6 +148,7 @@ export default function App() {
                 <Route path="/admin/inventario/productos/:id" element={<DetalleProductoAdmin />} />
                 <Route path="/admin/inventario/lotes"         element={<GestionLotes />} />
                 <Route path="/admin/inventario/alertas"       element={<AlertasInventario />} />
+                <Route path="/admin/inventario/importar"      element={<ImportarCatalogo />} />
                 <Route path="/admin/inventario/movimientos"   element={<Movimientos />} />
               </Route>
 

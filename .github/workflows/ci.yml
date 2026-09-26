@@ -99,6 +99,13 @@ jobs:
         working-directory: ./backend
         run: pnpm exec tsx ../database/seeds/seed.ts
 
+      - name: Integration tests (DB real)
+        working-directory: ./backend
+        run: pnpm run test:integration
+        env:
+          REDIS_URL: "redis://localhost:6379"
+          NODE_ENV: "development"
+
       - name: TypeScript check
         working-directory: ./backend
         run: npx tsc --noEmit

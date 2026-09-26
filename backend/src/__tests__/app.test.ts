@@ -124,6 +124,8 @@ const mockPrisma = vi.hoisted(() => ({
   },
   loteVenta: { create: vi.fn(), createMany: vi.fn() },
   detalleVenta: { create: vi.fn(), createMany: vi.fn() },
+  // Subquery unaccent de búsqueda (migración 0005) — vacío = sin matches
+  $queryRaw: vi.fn(async () => [] as Array<{ id: string }>),
   $transaction: vi.fn(),
 }))
 

@@ -1,5 +1,4 @@
 import { prisma } from '../config/database'
-import { logger } from '../utils/logger'
 
 export class InventarioService {
   /**
@@ -21,22 +20,30 @@ export class InventarioService {
   /**
    * Descuenta stock de un producto usando el método FEFO.
    * Se ejecuta dentro de una transacción de Prisma.
+   *
+   * ATOMICIDAD (hardening de concurrencia):
+   *  - Bloquea los lotes con SELECT ... FOR UPDATE: dos transacciones
+   *    concurrentes no pueden descontar el mismo lote a la vez.
+   *  - Usa decrement relativo (nunca read-then-write): sin pérdida de updates.
+   *  - Revalida el stock dentro del lock y lanza si es insuficiente →
+   *    la transacción entera se revierte (venta y stock, todo o nada).
    */
   static async descontarStockFEFO(
-    tx: any, 
-    productoId: string, 
-    sucursalId: number, 
+    tx: any,
+    productoId: string,
+    sucursalId: number,
     cantidadSolicitada: number
   ) {
-    const lotes = await tx.lote.findMany({
-      where: {
-        productoId,
-        sucursalId,
-        cantidadActual: { gt: 0 },
-        fechaVencimiento: { gt: new Date() },
-      },
-      orderBy: { fechaVencimiento: 'asc' },
-    })
+    const lotes = await tx.$queryRaw<any[]>`
+      SELECT "id", "cantidad_actual", "precio_compra"
+      FROM "lotes"
+      WHERE "producto_id" = ${productoId}::uuid
+        AND "sucursal_id" = ${sucursalId}
+        AND "cantidad_actual" > 0
+        AND "fecha_vencimiento" > NOW()
+      ORDER BY "fecha_vencimiento" ASC
+      FOR UPDATE
+    `
 
     let restante = cantidadSolicitada
     const detallesLotesModificados = []
@@ -44,16 +51,26 @@ export class InventarioService {
     for (const lote of lotes) {
       if (restante <= 0) break
 
-      const cantidadADescontar = Math.min(lote.cantidadActual, restante)
-      
-      await tx.lote.update({
-        where: { id: lote.id },
-        data: { cantidadActual: { decrement: cantidadADescontar } }
+      const cantidadADescontar = Math.min(lote.cantidad_actual, restante)
+
+      // Decrement atómico + revalidación dentro del lock.
+      // Si otro tx ya consumió stock, el WHERE no matchea y lo detectamos.
+      const actualizado = await tx.lote.updateMany({
+        where: {
+          id: lote.id,
+          cantidadActual: { gte: cantidadADescontar },
+        },
+        data: { cantidadActual: { decrement: cantidadADescontar } },
       })
+
+      if (actualizado.count === 0) {
+        throw new Error(`Conflicto de stock en lote ${lote.id} — reintentar transacción`)
+      }
 
       detallesLotesModificados.push({
         loteId: lote.id,
-        cantidad: cantidadADescontar
+        cantidad: cantidadADescontar,
+        precioCompra: lote.precio_compra,
       })
 
       restante -= cantidadADescontar
@@ -74,7 +91,7 @@ export class InventarioService {
       where: { productoId, cantidadActual: { gt: 0 } },
       select: { cantidadActual: true, precioCompra: true },
     })
-    
+
     const totalCantidad = lotes.reduce((s: number, l: any) => s + l.cantidadActual, 0)
     const totalCosto = lotes.reduce((s: number, l: any) => s + (l.cantidadActual * Number(l.precioCompra)), 0)
     const promedio = totalCantidad > 0 ? (totalCosto / totalCantidad) : nuevoPrecioCompraFallback

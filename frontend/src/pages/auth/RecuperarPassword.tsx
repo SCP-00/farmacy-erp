@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Mail, ArrowLeft, Send, CheckCircle, AlertCircle } from 'lucide-react'
+import { Mail, ArrowLeft, Send } from 'lucide-react'
 import { authClienteService } from '@/services'
 import toast from 'react-hot-toast'
 
