@@ -83,6 +83,10 @@ model Producto {
   cum               String               @unique @db.VarChar(50)
   registroInvima    String               @map("registro_invima") @db.VarChar(100)
   nombre            String               @db.VarChar(150)
+  /// [migración 0005] Columna normalizada para búsqueda sin acentos.
+  /// La mantiene el trigger trg_productos_normaliza (inm_lower_unaccent);
+  /// Prisma solo la LEE — nunca la escribe.
+  nombreNormalizado String?              @map("nombre_normalizado")
   principioActivo   String               @default("") @map("principio_activo") @db.VarChar(200)
   atc               String?              @db.VarChar(20)
   descripcionAtc    String?              @map("descripcion_atc") @db.VarChar(255)

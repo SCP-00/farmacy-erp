@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { prisma } from '../../config/database'
 import { cache } from '../../config/redis'
 import { responder, parsePaginacion } from '../../utils/respuesta.utils'
+import { qLike } from '../../utils/texto.utils'
 import { autenticar, autorizar, validarQuery, limitarCreacion, limitarBusqueda } from '../../middlewares/index'
 
 export const productosRouter: Router = Router()
@@ -54,13 +55,19 @@ productosRouter.get('/buscar', limitarBusqueda, validarQuery(buscarSchema), asyn
     }
 
     if (q && q.trim().length > 0) {
-      where.OR = [
-        { nombre:          { contains: q, mode: 'insensitive' } },
-        { principioActivo: { contains: q, mode: 'insensitive' } },
-        { laboratorio:     { contains: q, mode: 'insensitive' } },
-        { concentracion:   { contains: q, mode: 'insensitive' } },
-        { descripcion:     { contains: q, mode: 'insensitive' } },
-      ]
+      // Búsqueda insensible a acentos (migración 0005): "acetaminofen"
+      // encuentra "Acetaminofén". nombre_normalizado (columna mantenida
+      // por trigger) usa el índice GIN trigram; el resto de columnas se
+      // normaliza en la misma query con unaccent(lower(...)).
+      const patron = qLike(q)
+      const filas = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT p.id FROM "productos" p
+        WHERE p."nombre_normalizado" LIKE ${patron}
+           OR unaccent(lower(p."principio_activo")) LIKE ${patron}
+           OR unaccent(lower(p."laboratorio")) LIKE ${patron}
+           OR unaccent(lower(p."concentracion")) LIKE ${patron}
+           OR unaccent(lower(p."descripcion")) LIKE ${patron}`
+      where.id = { in: filas.map(f => f.id) }
     }
 
     if (categoria) where.categoria = { slug: categoria }
@@ -128,11 +135,16 @@ productosRouter.get('/', autenticar, validarQuery(listarAdminSchema), limitarBus
   const { q, categoriaId, activo } = req.query as any
 
   const where: any = {}
-  if (q) where.OR = [
-    { nombre: { contains: q, mode: 'insensitive' } },
-    { registroInvima: { contains: q, mode: 'insensitive' } },
-    { cum: { contains: q, mode: 'insensitive' } },
-  ]
+  if (q) {
+    // Misma técnica que /buscar: unaccent (migración 0005)
+    const patron = qLike(q)
+    const filas = await prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT p.id FROM "productos" p
+      WHERE p."nombre_normalizado" LIKE ${patron}
+         OR unaccent(lower(p."registro_invima")) LIKE ${patron}
+         OR unaccent(lower(p."cum")) LIKE ${patron}`
+    where.id = { in: filas.map(f => f.id) }
+  }
   if (categoriaId) where.categoriaId = parseInt(categoriaId)
   if (activo !== undefined) where.activo = activo === 'true'
 

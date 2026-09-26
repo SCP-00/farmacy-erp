@@ -11,7 +11,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts', 'src/**/*.spec.ts'],
-    exclude: ['node_modules', 'dist'],
+    // La integración corre con vitest.integration.config.ts (singleFork,
+    // tras migrate+seed en CI) — incluir aquí los hace chocar en paralelo
+    // contra la misma DB (limpieza de tests concurrentes).
+    exclude: ['node_modules', 'dist', 'src/__tests__/integration/**'],
     setupFiles: [],
     coverage: {
       provider: 'v8',
