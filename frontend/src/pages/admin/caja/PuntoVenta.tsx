@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff, CloudOff, RefreshCw } from 'lucide-react'
+import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff, CloudOff, RefreshCw, AlertTriangle, RadioTower } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { productosService, cajaService, chatbotService } from '@/services'
 import { encolarVenta, sincronizarOutbox, listarVentas, pendientes, type VentaOutbox } from '@/services/outboxOffline'
@@ -9,6 +9,7 @@ import type { WSEvent } from '@/hooks'
 import { CATEGORIAS_ICONOS, METODO_PAGO_LABEL } from '@/config/constants'
 import { useAuthStore } from '@/store/authStore'
 import { fuzzyFilterProductos } from '@/utils/fuzzySearch'
+import ColaExcepciones from '@/components/shared/ColaExcepciones'
 import InvoicePreview from './InvoicePreview'
 import InteractionAlertModal from '@/components/shared/InteractionAlertModal'
 
@@ -34,6 +35,10 @@ export default function PuntoVenta() {
   
   // Estado para la factura (tirilla)
   const [facturaVisible, setFacturaVisible] = useState<any>(null)
+
+  // Cola de excepciones del outbox (revisión humana)
+  const [colaVisible, setColaVisible] = useState(false)
+  const [ventasExcepcion, setVentasExcepcion] = useState<VentaOutbox[]>([])
 
   // ── Interacción clínica ─────────────────────────────────
   const [alertasInteraccion, setAlertasInteraccion] = useState<any[] | null>(null)
@@ -73,7 +78,9 @@ export default function PuntoVenta() {
   const refrescarOutbox = useCallback(async () => {
     const cola = await pendientes()
     setOutboxPendientes(cola.filter(v => v.estado === 'PENDIENTE').length)
-    setOutboxErrores(cola.filter(v => v.estado === 'ERROR').length)
+    const errores = cola.filter(v => v.estado === 'ERROR')
+    setOutboxErrores(errores.length)
+    setVentasExcepcion(errores)
   }, [])
 
   useEffect(() => {
@@ -149,7 +156,15 @@ export default function PuntoVenta() {
   }
 
   // ── Verificar interacciones antes de cobrar ────────────
+  // El click en "Cobrar" es la confirmación normal del POS (fricción 0
+  // para el flujo diario). Se pide confirmación EXTRA solo cuando hay
+  // descuento aplicado: es la operación que toca el margen sin dejar
+  // rastro de aprobación.
   const handleCobrarClick = async () => {
+    if (descuento > 0) {
+      const ok = window.confirm(`Cobro con descuento de ${cop(descuento)}\n\nTotal a cobrar: ${cop(total)}\n¿Confirmar?`)
+      if (!ok) return
+    }
     if (carrito.length < 2) {
       // Sin interacciones posibles, cobrar directamente
       ventaMutation.mutate()
@@ -307,6 +322,39 @@ export default function PuntoVenta() {
         />
       )}
 
+      {/* Estado de sincronización offline — VISIBLE EN TODOS LOS TAMAÑOS:
+          el cajero en móvil/tablet sin red debe saber que sus ventas
+          están seguras en la cola y cuántas requieren su revisión */}
+      {outboxErrores > 0 && (
+        <button
+          onClick={() => setColaVisible(true)}
+          className="w-full mb-2 px-4 py-2.5 rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/20 flex items-center justify-between gap-3 transition-colors hover:bg-red-100/70 dark:hover:bg-red-900/30"
+        >
+          <span className="flex items-center gap-2 text-xs font-semibold text-red-700 dark:text-red-300">
+            <AlertTriangle size={14} className="flex-shrink-0" />
+            {outboxErrores} venta{outboxErrores !== 1 ? 's' : ''} requiere{outboxErrores !== 1 ? 'n' : ''} revisión — no se envió al server
+          </span>
+          <span className="text-[11px] font-semibold text-red-700 dark:text-red-300 underline underline-offset-2">Revisar cola</span>
+        </button>
+      )}
+      {outboxPendientes > 0 && (
+        <div className="w-full mb-2 px-4 py-2.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20 flex items-center justify-between gap-3">
+          <span className="flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-300 min-w-0">
+            <RadioTower size={14} className="flex-shrink-0 animate-pulse-soft" />
+            <span className="truncate">Sin conexión: {outboxPendientes} venta{outboxPendientes !== 1 ? 's' : ''} en cola — se envía{outboxPendientes !== 1 ? 'n' : ''} sola al reconectar</span>
+          </span>
+          <span className="text-[10px] font-mono text-amber-600/80 dark:text-amber-300/60 flex-shrink-0 hidden sm:inline">guardo primero · envío después</span>
+        </div>
+      )}
+
+      {colaVisible && (
+        <ColaExcepciones
+          ventas={ventasExcepcion}
+          onClose={() => setColaVisible(false)}
+          onCambio={refrescarOutbox}
+        />
+      )}
+
       {/* Shortcuts hint + WS status (solo desktop) */}
       <div className="hidden md:flex items-center gap-2 mb-2 text-[10px] text-gray-400 dark:text-dark-text/40 px-1">
         {wsConectado ? (
@@ -314,11 +362,6 @@ export default function PuntoVenta() {
         ) : (
           <span className="inline-flex items-center gap-1 text-amber-600 mr-1"><WifiOff size={10} />Reconectando...</span>
         )}
-        {outboxErrores > 0 ? (
-          <span className="inline-flex items-center gap-1 text-red-600 mr-1"><CloudOff size={10} />{outboxErrores} en excepción</span>
-        ) : outboxPendientes > 0 ? (
-          <span className="inline-flex items-center gap-1 text-amber-600 mr-1"><RefreshCw size={10} />{outboxPendientes} pendiente{outboxPendientes > 1 ? 's' : ''} de sync</span>
-        ) : null}
         <Keyboard size={10} />
         <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-dark-surface rounded text-[9px] font-mono border border-gray-200 dark:border-dark-border">F2</kbd> Cobrar
         <kbd className="px-1 py-0.5 bg-gray-100 dark:bg-dark-surface rounded text-[9px] font-mono border border-gray-200 dark:border-dark-border">F4</kbd> Limpiar
@@ -373,7 +416,6 @@ export default function PuntoVenta() {
           </div>
         </div>
 
-        {/* Panel derecho: carrito y cobro */}
         {/* Panel derecho: carrito y cobro */}
         <div className="w-full lg:w-80 flex-shrink-0 bg-white dark:bg-dark-surface border-l border-[#D8EBE4] dark:border-dark-border flex flex-col">
           <div className="px-4 py-3 border-b border-[#D8EBE4] dark:border-dark-border flex items-center justify-between">

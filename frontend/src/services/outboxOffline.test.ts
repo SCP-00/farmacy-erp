@@ -16,6 +16,11 @@ const { mockApiPost, mockStore } = vi.hoisted(() => {
       registros,
       put: vi.fn(async (_store: string, val: any) => { registros.set(val.idempotencyKey, structuredClone(val)) }),
       getAll: vi.fn(async () => [...registros.values()].map(v => structuredClone(v))),
+      get: vi.fn(async (_store: string, key: string) => {
+        const v = registros.get(key)
+        return v ? structuredClone(v) : undefined
+      }),
+      delete: vi.fn(async (_store: string, key: string) => { registros.delete(key) }),
     },
   }
 })
@@ -28,7 +33,7 @@ vi.mock('@/config/api', () => ({
   api: { post: mockApiPost },
 }))
 
-import { encolarVenta, sincronizarOutbox, pendientes, listarVentas } from './outboxOffline'
+import { encolarVenta, sincronizarOutbox, pendientes, listarVentas, reintentarVenta, descartarVenta } from './outboxOffline'
 
 describe('outboxOffline (ADR 0004 fase 1)', () => {
   beforeEach(() => {
@@ -135,5 +140,49 @@ describe('outboxOffline (ADR 0004 fase 1)', () => {
     expect(venta.estado).toBe('ERROR')
     expect(venta.intentos).toBe(8)
     expect(venta.ultimoError).toBe('Network Error')
+  })
+
+  // ── Cola de excepciones: revisión humana ─────────────────
+
+  it('reintentarVenta: ERROR → PENDIENTE con intentos 0 y se sincroniza al haber negocio válido', async () => {
+    // Primer intento: rechazo de negocio (p. ej. stock transitoriamente
+    // sin recibir mercancía). Segundo: el server ya lo acepta.
+    const err: any = new Error('Bad Request')
+    err.response = { status: 400, data: { error: 'Sin stock suficiente' } }
+    mockApiPost.mockRejectedValueOnce(err)
+      .mockResolvedValueOnce({ data: { data: { ventaId: 'v9', ventaNum: 9, total: 4500 } } })
+
+    await encolarVenta(payloadBase)
+    await sincronizarOutbox()
+    let [venta] = await pendientes()
+    expect(venta.estado).toBe('ERROR')
+
+    const ok = await reintentarVenta(venta.idempotencyKey)
+    expect(ok).toBe(true)
+
+    // Ya no está en la cola de excepciones: quedó sincronizada
+    expect(await pendientes()).toHaveLength(0)
+    const [final] = await listarVentas()
+    expect(final.estado).toBe('SINCRONIZADA')
+    expect(final.ventaNum).toBe(9)
+    expect(final.intentos).toBe(0)
+  })
+
+  it('reintentarVenta lanza error si la ficha no existe', async () => {
+    await expect(reintentarVenta('no-existe')).rejects.toThrow('Venta no encontrada en el outbox')
+  })
+
+  it('descartarVenta elimina la ficha del outbox (error confirmado por el farmacéuta)', async () => {
+    const err: any = new Error('Bad Request')
+    err.response = { status: 422, data: { error: 'Cupón vencido' } }
+    mockApiPost.mockRejectedValue(err)
+
+    await encolarVenta(payloadBase)
+    await sincronizarOutbox()
+    const [venta] = await pendientes()
+    expect(venta.estado).toBe('ERROR')
+
+    await descartarVenta(venta.idempotencyKey, 'Cupón vencido confirmado')
+    expect(await listarVentas()).toHaveLength(0)
   })
 })

@@ -83,6 +83,38 @@ async function actualizar(venta: VentaOutbox): Promise<void> {
   await db.put(STORE, venta)
 }
 
+// ── Cola de excepciones (revisión humana) ─────────────────
+
+/**
+ * Reintenta manualmente una venta en cola de excepciones (estado ERROR).
+ * La ficha vuelve a PENDIENTE con contador de intentos en cero, de modo
+ * que el ciclo normal de sincronización la procese con backoff limpio.
+ * Devuelve true si salió sincronizada en este intento.
+ */
+export async function reintentarVenta(idempotencyKey: string): Promise<boolean> {
+  const db = await getDB()
+  const venta = await db.get(STORE, idempotencyKey) as VentaOutbox | undefined
+  if (!venta) throw new Error('Venta no encontrada en el outbox')
+  venta.estado = 'PENDIENTE'
+  venta.intentos = 0
+  venta.creadoEn = Date.now() // reinicia la ventana de backoff
+  await db.put(STORE, venta)
+  return (await sincronizarOutbox()) > 0
+}
+
+/**
+ * Descarta definitivamente una venta rechazada (error de negocio
+ * confirmado por el farmacéuta). El cobro ya se registró en caja: el
+ * descarte queda auditado en consola para cuadrar el cierre de caja.
+ */
+export async function descartarVenta(idempotencyKey: string, motivo: string): Promise<void> {
+  const db = await getDB()
+  await db.delete(STORE, idempotencyKey)
+  // Auditoría local del descarte (queda en consola del POS hasta fase 2,
+  // que persistirá el log de descartes en IndexedDB aparte).
+  console.info(`[outbox] Venta ${idempotencyKey} descartada: ${motivo}`)
+}
+
 // ── Envío con reintento exponencial ───────────────────────
 
 function esErrorDeRed(err: unknown): boolean {

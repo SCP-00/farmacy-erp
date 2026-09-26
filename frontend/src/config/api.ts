@@ -2,7 +2,28 @@ import axios from 'axios'
 import { useAuthStore }        from '@/store/authStore'
 import { useAuthClienteStore } from '@/store/authStore'
 
-const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
+// Orden de resolución del servidor API:
+//  1. VITE_API_URL compilada (deploys web: nube/staging) — fija.
+//  2. localStorage 'farmacy.apiBaseUrl' (apps de escritorio Tauri/Electron
+//     o POS en LAN: el farmacéuta escribe la URL de su servidor una vez
+//     en la pantalla de login, p. ej. https://api.mi-farmacia.com/v1).
+//  3. '/api/v1' (web con proxy del propio origin).
+export const API_URL_COMPILADA = import.meta.env.VITE_API_URL || ''
+export const API_URL_LOCALSTORAGE = 'farmacy.apiBaseUrl'
+export function resolverBaseUrl(): string {
+  if (API_URL_COMPILADA) return API_URL_COMPILADA
+  try {
+    const guardada = localStorage.getItem(API_URL_LOCALSTORAGE)
+    if (guardada) return guardada.replace(/\/$/, '')
+  } catch { /* localStorage no disponible (SSR/test) */ }
+  // Empaquetado de escritorio (Tauri/Electron) sin servidor configurado:
+  // apunta al backend local instalado en el mismo equipo. El farmacéuta
+  // puede cambiarlo por el de su empresa desde el login.
+  const esDesktop = typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || 'electronAPI' in window)
+  if (esDesktop) return 'http://localhost:3000/api/v1'
+  return '/api/v1'
+}
+const BASE_URL = resolverBaseUrl()
 
 /**
  * Cliente axios autenticado para empleados (admin/farmaceuta/auxiliar).

@@ -2,16 +2,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-teal-50: #EEF5FF;
-  --color-teal-100: #D9E8FF;
-  --color-teal-200: #B8D4FF;
-  --color-teal-300: #8CB7FF;
-  --color-teal-400: #6099FF;
-  --color-teal-500: #367BFF;
-  --color-teal-600: #1C66EF;
-  --color-teal-700: #1352C7;
-  --color-teal-800: #123B8A;
-  --color-teal-900: #0E245E;
+  /* Rampa verde medicinal Farmacy — marca #0F6E56.
+     Sustituye el override azul anterior para que TODO el sistema
+     (tienda, admin, POS, botones bg-teal-700, focus rings) use el
+     verde farmacéutico de forma coherente. */
+  --color-teal-50: #EDF7F2;
+  --color-teal-100: #D7EEE2;
+  --color-teal-200: #AEDCC8;
+  --color-teal-300: #7FC5AA;
+  --color-teal-400: #52AD8C;
+  --color-teal-500: #2F9370;
+  --color-teal-600: #1F7F5E;
+  --color-teal-700: #0F6E56;
+  --color-teal-800: #0A5744;
+  --color-teal-900: #063D30;
   --color-amber: #BA7517;
   --color-danger: #A32D2D;
   --color-danger-light: #FCEBEB;
@@ -33,7 +37,7 @@
   --color-dark-text: #e3e3e6;
   --color-dark-text-secondary: #a1a1aa;
   --color-dark-text-muted: #78788a;
-  --color-dark-accent: #6ba3d6;
+  --color-dark-accent: #7CC1A6;
   --color-dark-hover: rgba(255,255,255,0.05);
 
   --font-sans: 'DM Sans', 'system-ui', 'sans-serif';
@@ -87,16 +91,17 @@
 
   .dark {
     color-scheme: dark;
-    --color-teal-50: #182235;
-    --color-teal-100: #1e2d47;
-    --color-teal-200: #2a3d5e;
-    --color-teal-300: #3a5280;
-    --color-teal-400: #4d6da3;
-    --color-teal-500: #638bc4;
-    --color-teal-600: #7ba4dc;
-    --color-teal-700: #97bcee;
-    --color-teal-800: #b8d5f5;
-    --color-teal-900: #d8eaff;
+    /* Rampa invertida en oscuro (teal-50 = superficie oscura verdosa) */
+    --color-teal-50: #122B22;
+    --color-teal-100: #16342A;
+    --color-teal-200: #1D4436;
+    --color-teal-300: #265A46;
+    --color-teal-400: #31725A;
+    --color-teal-500: #3E8A6E;
+    --color-teal-600: #58A689;
+    --color-teal-700: #7CC1A6;
+    --color-teal-800: #A8D7C4;
+    --color-teal-900: #D7EEE2;
     --color-danger-light: #2a1418;
     --color-red-50: #2a1418;
     --color-red-100: #3a1c22;
@@ -125,17 +130,17 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     background-image:
-      radial-gradient(circle at top left, rgba(15, 110, 86, 0.08), transparent 34%),
-      radial-gradient(circle at top right, rgba(180, 30, 54, 0.08), transparent 24%),
-      linear-gradient(180deg, #f7fbff 0%, #eef5ff 100%);
+      radial-gradient(circle at top left, rgba(15, 110, 86, 0.10), transparent 34%),
+      radial-gradient(circle at top right, rgba(186, 117, 23, 0.05), transparent 24%),
+      linear-gradient(180deg, #f6fbf8 0%, #eaf5ef 100%);
     transition: background-color 0.35s ease, color 0.35s ease;
   }
 
   .dark body {
     background-color: var(--color-dark-bg);
     background-image:
-      radial-gradient(ellipse 60% 50% at 10% 0%, rgba(107, 163, 214, 0.04), transparent),
-      radial-gradient(ellipse 50% 40% at 90% 0%, rgba(160, 100, 130, 0.03), transparent);
+      radial-gradient(ellipse 60% 50% at 10% 0%, rgba(124, 193, 166, 0.05), transparent),
+      radial-gradient(ellipse 50% 40% at 90% 0%, rgba(186, 117, 23, 0.04), transparent);
   }
 
   a {
@@ -270,7 +275,7 @@
   }
   &:focus {
     border-color: var(--color-teal-500);
-    box-shadow: 0 0 0 4px rgba(74, 127, 204, 0.2);
+    box-shadow: 0 0 0 4px rgba(124, 193, 166, 0.25);
   }
 }
 
@@ -389,11 +394,11 @@
 @utility hero-panel {
   background-image:
     radial-gradient(circle at top left, rgba(255,255,255,0.28), transparent 30%),
-    linear-gradient(135deg, #0f6e56 0%, #145fdd 100%);
+    linear-gradient(135deg, #0F6E56 0%, #0A5744 60%, #074234 100%);
 }  .dark .hero-panel {
     background-image:
       radial-gradient(circle at top left, rgba(255,255,255,0.08), transparent 30%),
-      linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      linear-gradient(135deg, #10251E 0%, #0A1F18 100%);
   }
 
 @utility feature-pill {
