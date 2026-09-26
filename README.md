@@ -15,6 +15,56 @@
 
 ---
 
+## 📸 Screenshots — funcionamiento real
+
+> Capturas tomadas de la aplicación corriendo (backend + PostgreSQL + React), con ventas y datos reales de los seeds. Nada maquetado.
+
+### 🛒 Cliente (tienda B2C)
+
+| | |
+|---|---|
+| **Home** — catálogo vivo conectado al inventario real, recomendados del día y categorías. | ![Tienda — Home](docs/screenshots/01-tienda-home.png) |
+| **Catálogo** — filtros por categoría, laboratorio, precio y venta libre/Receta Médica (RX). Búsqueda **sin acentos**: `acetaminofen` encuentra `Acetaminofén`. | ![Catálogo](docs/screenshots/02-tienda-catalogo.png) |
+| **Carrito** — persistente (localStorage), control de stock máximo por producto y aviso de RX. | ![Carrito](docs/screenshots/03-tienda-carrito.png) |
+| **Checkout — datos de envío** — cliente autenticado (el seed crea `cliente@ejemplo.co`). | ![Checkout datos](docs/screenshots/14-checkout-datos.png) |
+| **Checkout — pasarelas de pago** — Wompi (PSE/Nequi/tarjetas), Stripe, MercadoPago, Efectivo y Transferencia. | ![Checkout Wompi](docs/screenshots/15-checkout-wompi.png) |
+| **Ficha de producto** — información INVIMA/CUM, indicaciones, contraindicaciones, alérgenos y lotes disponibles. | ![Detalle producto](docs/screenshots/16-producto-detalle.png) |
+| **Mi cuenta — pedidos** — historial de compras y puntos del programa de fidelidad. | ![Cuenta](docs/screenshots/17-cuenta-pedidos.png) |
+| **Sucursales** — sedes físicas con horarios y contacto. | ![Sucursales](docs/screenshots/18-sucursales.png) |
+
+### 🖥️ Administrador
+
+| | |
+|---|---|
+| **Login empleados** — RBAC (Administrador / Farmacéuta / Auxiliar). En escritorio (Tauri/Electron) incluye el campo **"Servidor de la empresa"** para conectar el POS a la nube/VPS. | ![Login admin](docs/screenshots/04-login-admin.png) |
+| **Dashboard** — ventas del día en vivo (WebSocket/SSE), KPIs y alertas de inventario. | ![Dashboard](docs/screenshots/05-admin-dashboard.png) |
+
+### 🧾 Punto de Venta (POS) — offline-first
+
+| | |
+|---|---|
+| **Búsqueda instantánea** — resultados con stock, precio y RX; atajos F2 (cobrar), F4 (limpiar), F5 (caja), F8 (buscar). Compatible con lector de códigos de barras USB (emula teclado + Enter). | ![POS búsqueda](docs/screenshots/06-pos-busqueda.png) |
+| **Venta en curso** — carrito con Acetaminofén + Ibuprofeno, descuentos, métodos de pago y total. Al cobrar se verifica **interacción medicamentosa** antes de registrar. | ![POS venta](docs/screenshots/07-pos-venta-carrito.png) |
+| **Ticket electrónico** — tirilla generada por la venta #F-000118 real ($11.100): cajero, items, método de pago e impresión. | ![Ticket](docs/screenshots/08-pos-ticket-electronico.png) |
+
+> Sin internet, el cobro funciona igual: la venta queda en el **outbox local (IndexedDB)** y se sincroniza con idempotencia al reconectar — sin duplicar stock.
+
+### 📦 Inventario y compras
+
+| | |
+|---|---|
+| **Lotes FEFO** — vencimientos y stock por lote; el POS descuenta primero el lote más próximo a vencer. | ![Lotes FEFO](docs/screenshots/09-inventario-lotes-fefo.png) |
+| **Órdenes de compra** — proveedores, recepción de mercancía y generación automática de lotes. | ![Órdenes](docs/screenshots/10-compras-ordenes.png) |
+| **Nueva orden** — alta de compras con múltiples productos y costos. | ![Nueva orden](docs/screenshots/11-compras-nueva-orden.png) |
+
+### 👥 Farmacéuta y clientes
+
+| | |
+|---|---|
+| **Clientes** — historial, perfil de salud (alérgenos) y datos de contacto. | ![Clientes](docs/screenshots/12-clientes.png) |
+| **Programa de fidelidad** — 1 punto por $100 COP, canje y expiración automática. | ![Fidelidad](docs/screenshots/13-farmaceuta-fidelidad.png) |
+
+---
 ## ✨ Características principales
 
 ### 🏪 Tienda B2C (pública)
