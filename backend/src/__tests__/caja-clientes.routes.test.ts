@@ -32,11 +32,11 @@ const mockPrisma = vi.hoisted(() => ({
   producto: { findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
   categoria: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
   sucursal: { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
-  venta: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), count: vi.fn(), aggregate: vi.fn() },
+  venta: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), count: vi.fn(), aggregate: vi.fn(), groupBy: vi.fn() },
   lote: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), create: vi.fn(), count: vi.fn() },
   inventario: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn() },
   caja: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
-  cajaMovimiento: { findMany: vi.fn(), create: vi.fn(), count: vi.fn() },
+  cajaMovimiento: { findMany: vi.fn(), create: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
   proveedor: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
   compra: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), count: vi.fn() },
   detalleCompra: { create: vi.fn(), createMany: vi.fn() },
@@ -101,6 +101,20 @@ import supertest from 'supertest'
 import { createApp } from '../app'
 
 const apiPrefix = '/api/v1'
+
+// ── Helpers de caja ───────────────────────────────────────
+const CAJA_ABIERTA = { id: 'caja-1', empleadoId: 'emp-1', montoApertura: 100000, cerradaEn: null, abiertaEn: new Date() }
+
+/** Simula los grupos por método que devuelve venta.groupBy y la ausencia de movimientos. */
+function mockResumen({ efectivo = 0, tarjeta = 0, online = 0, count = 1 } = {}) {
+  const grupos: any[] = []
+  if (efectivo) grupos.push({ metodoPago: 'EFECTIVO', _sum: { total: efectivo }, _count: { _all: count } })
+  if (tarjeta)  grupos.push({ metodoPago: 'STRIPE',   _sum: { total: tarjeta },  _count: { _all: count } })
+  if (online)   grupos.push({ metodoPago: 'WOMPI',     _sum: { total: online },   _count: { _all: count } })
+  mockPrisma.venta.groupBy.mockResolvedValue(grupos)
+  mockPrisma.cajaMovimiento.groupBy.mockResolvedValue([])
+  mockPrisma.cajaMovimiento.findMany.mockResolvedValue([])
+}
 
 // ── CAJA ──────────────────────────────────────────────────
 describe('Caja Routes - GET /caja/actual', () => {
@@ -180,22 +194,163 @@ describe('Caja Routes - POST /caja/:id/cerrar', () => {
   beforeEach(() => { vi.clearAllMocks() })
 
   it('rechaza si hay ventas pendientes', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue(CAJA_ABIERTA)
     mockPrisma.venta.count.mockResolvedValue(2)
     const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/cerrar`)
       .set('Authorization', 'Bearer valid-admin-token')
-      .send({ montoCierre: 1000000 })
+      .send({ efectivoContado: 1000000 })
     expect(res.status).toBe(400)
     expect(res.body.error).toContain('pendientes')
   })
 
-  it('cierra caja exitosamente con diferencia', async () => {
-    mockPrisma.venta.count.mockResolvedValue(0)
-    mockPrisma.venta.aggregate.mockResolvedValue({ _sum: { total: 900000 } })
-    mockPrisma.caja.update.mockResolvedValue({ id: 'caja-1', cerradaEn: new Date() })
+  it('rechaza con 404 si la caja no existe', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue(null)
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-999/cerrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ efectivoContado: 1000 })
+    expect(res.status).toBe(404)
+  })
+
+  it('rechaza con 409 si la caja ya está cerrada', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue({ ...CAJA_ABIERTA, cerradaEn: new Date() })
     const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/cerrar`)
       .set('Authorization', 'Bearer valid-admin-token')
-      .send({ montoCierre: 1000000, totalEfectivo: 500000, totalTarjeta: 400000, totalOnline: 100000 })
+      .send({ efectivoContado: 1000 })
+    expect(res.status).toBe(409)
+  })
+
+  it('rechaza con 422 si falta el efectivo contado', async () => {
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/cerrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ observaciones: 'faltó el arqueo' })
+    expect(res.status).toBe(422)
+  })
+
+  it('cuadra la caja cuando el efectivo contado iguala el esperado', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue(CAJA_ABIERTA)
+    mockPrisma.venta.count.mockResolvedValue(0)
+    mockResumen({ efectivo: 900000 })
+    mockPrisma.caja.update.mockResolvedValue({ id: 'caja-1', diferencia: 0, cerradaEn: new Date() })
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/cerrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ efectivoContado: 1000000 })
     expect(res.status).toBe(200)
+    // esperado = apertura 100000 + ventas efectivo 900000 = 1000000
+    expect(String(mockPrisma.caja.update.mock.calls[0][0].data.efectivoEsperado)).toBe('1000000')
+    expect(mockPrisma.caja.update.mock.calls[0][0].data.diferencia).toBe(0)
+  })
+
+  it('registra un faltante como diferencia negativa', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue(CAJA_ABIERTA)
+    mockPrisma.venta.count.mockResolvedValue(0)
+    mockResumen({ efectivo: 500000 })
+    mockPrisma.caja.update.mockResolvedValue({ id: 'caja-1', diferencia: -50000, cerradaEn: new Date() })
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/cerrar`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ efectivoContado: 550000 })
+    expect(res.status).toBe(200)
+    // esperado = 100000 + 500000 = 600000; contado 550000 → diferencia -50000
+    expect(mockPrisma.caja.update.mock.calls[0][0].data.diferencia).toBe(-50000)
+  })
+})
+
+describe('Caja Routes - GET /caja/:id/resumen', () => {
+  let app: express.Express
+  beforeAll(() => { app = createApp() })
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('rechaza sin autenticación', async () => {
+    const res = await supertest(app).get(`${apiPrefix}/caja/caja-1/resumen`)
+    expect(res.status).toBe(401)
+  })
+
+  it('retorna 404 si la caja no existe', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue(null)
+    const res = await supertest(app).get(`${apiPrefix}/caja/caja-999/resumen`)
+      .set('Authorization', 'Bearer valid-admin-token')
+    expect(res.status).toBe(404)
+  })
+
+  it('calcula totales por método y efectivo esperado', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue(CAJA_ABIERTA)
+    mockResumen({ efectivo: 500000, tarjeta: 200000, online: 300000 })
+    const res = await supertest(app).get(`${apiPrefix}/caja/caja-1/resumen`)
+      .set('Authorization', 'Bearer valid-admin-token')
+    expect(res.status).toBe(200)
+    expect(res.body.data.totalEfectivo).toBe(500000)
+    expect(res.body.data.totalTarjeta).toBe(200000)
+    expect(res.body.data.totalOnline).toBe(300000)
+    expect(res.body.data.totalVentas).toBe(1000000)
+    expect(res.body.data.efectivoEsperado).toBe(600000)
+  })
+})
+
+describe('Caja Routes - GET /caja/actual/resumen', () => {
+  let app: express.Express
+  beforeAll(() => { app = createApp() })
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('retorna null cuando no hay caja abierta', async () => {
+    mockPrisma.caja.findFirst.mockResolvedValue(null)
+    const res = await supertest(app).get(`${apiPrefix}/caja/actual/resumen`)
+      .set('Authorization', 'Bearer valid-admin-token')
+    expect(res.status).toBe(200)
+    expect(res.body.data).toBeNull()
+  })
+
+  it('retorna el resumen de la caja abierta', async () => {
+    mockPrisma.caja.findFirst.mockResolvedValue(CAJA_ABIERTA)
+    mockResumen({ efectivo: 500000 })
+    const res = await supertest(app).get(`${apiPrefix}/caja/actual/resumen`)
+      .set('Authorization', 'Bearer valid-admin-token')
+    expect(res.status).toBe(200)
+    expect(res.body.data.efectivoEsperado).toBe(600000)
+  })
+})
+
+describe('Caja Routes - POST /caja/:id/movimiento', () => {
+  let app: express.Express
+  beforeAll(() => { app = createApp() })
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('rechaza sin autenticación', async () => {
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/movimiento`)
+      .send({ tipo: 'SANGRIA', monto: 50000, motivo: 'Retiro a caja fuerte' })
+    expect(res.status).toBe(401)
+  })
+
+  it('rechaza con 422 un monto inválido', async () => {
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/movimiento`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ tipo: 'SANGRIA', monto: -5, motivo: 'Retiro' })
+    expect(res.status).toBe(422)
+  })
+
+  it('rechaza con 409 si la caja está cerrada', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue({ ...CAJA_ABIERTA, cerradaEn: new Date() })
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/movimiento`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ tipo: 'SANGRIA', monto: 50000, motivo: 'Retiro a caja fuerte' })
+    expect(res.status).toBe(409)
+  })
+
+  it('registra una sangría y devuelve el resumen actualizado', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue(CAJA_ABIERTA)
+    mockPrisma.cajaMovimiento.create.mockResolvedValue({ id: 'mov-1', tipo: 'SANGRIA', monto: 50000 })
+    mockResumen({ efectivo: 500000 })
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/movimiento`)
+      .set('Authorization', 'Bearer valid-admin-token')
+      .send({ tipo: 'SANGRIA', monto: 50000, motivo: 'Retiro a caja fuerte' })
+    expect(res.status).toBe(201)
+    expect(res.body.data.movimiento.id).toBe('mov-1')
+  })
+
+  it('rechaza con 403 si un farmaceuta opera una caja ajena', async () => {
+    mockPrisma.caja.findUnique.mockResolvedValue({ ...CAJA_ABIERTA, empleadoId: 'otro-empleado' })
+    const res = await supertest(app).post(`${apiPrefix}/caja/caja-1/movimiento`)
+      .set('Authorization', 'Bearer valid-farmaceuta-token')
+      .send({ tipo: 'SANGRIA', monto: 50000, motivo: 'Retiro a caja fuerte' })
+    expect(res.status).toBe(403)
   })
 })
 
