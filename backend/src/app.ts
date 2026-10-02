@@ -47,6 +47,7 @@ import { cuponesRouter } from './modules/cupones/cupones.routes'
 import { healthRouter } from './modules/health/health.routes'
 import { importadorRouter } from './modules/importador/importador.routes'
 import { configRouter } from './modules/config/config.routes'
+import { impresionRouter } from './modules/impresion/impresion.routes'
 
 export function createApp(): Express {
   const app = express()
@@ -186,6 +187,7 @@ export function createApp(): Express {
   app.use(`${prefix}/health`, healthRouter)
   app.use(`${prefix}/importar`, importadorRouter)
   app.use(`${prefix}/config`, configRouter)
+  app.use(`${prefix}/impresion`, impresionRouter)
 
   // ── 404 y manejador global de errores ─────────────────
   app.use((_req: Request, res: Response) => {

@@ -171,16 +171,28 @@ export const ventasService = {
     api.post(`/ventas/${ventaId}/devolucion`, data).then(r => r.data),
 }
 
-/** Caja POS. Apertura/cierre, estado actual, historial. */
+/** Caja POS. Apertura/cierre, movimientos, arqueo, estado actual, historial. */
 export const cajaService = {
   abrirCaja: (data: { sucursalId: number; montoApertura: number }) =>
     api.post('/caja/abrir', data).then(r => r.data.data),
 
-  cerrarCaja: (cajaId: string, data: Record<string, unknown>) =>
+  cerrarCaja: (cajaId: string, data: { efectivoContado: number; observaciones?: string; denominaciones?: unknown }) =>
     api.post(`/caja/${cajaId}/cerrar`, data).then(r => r.data.data),
 
   estadoActual: () =>
     api.get('/caja/actual').then(r => r.data.data),
+
+  /** Resumen (totales de sistema + efectivo esperado) de la caja abierta. */
+  resumenActual: () =>
+    api.get('/caja/actual/resumen').then(r => r.data.data),
+
+  /** Resumen de una caja concreta. */
+  resumen: (cajaId: string) =>
+    api.get(`/caja/${cajaId}/resumen`).then(r => r.data.data),
+
+  /** Registra una sangría o ingreso de efectivo en una caja abierta. */
+  registrarMovimiento: (cajaId: string, data: { tipo: 'INGRESO' | 'SANGRIA'; monto: number; motivo: string }) =>
+    api.post(`/caja/${cajaId}/movimiento`, data).then(r => r.data.data),
 
   historial: (params?: Record<string, unknown>) =>
     api.get('/caja/historial', { params }).then(r => r.data.data),

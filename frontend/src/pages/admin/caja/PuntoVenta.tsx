@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff, CloudOff, RefreshCw, AlertTriangle, RadioTower } from 'lucide-react'
+import { Search, Scan, Plus, Minus, Trash2, Receipt, X, Keyboard, Wifi, WifiOff, AlertTriangle, RadioTower } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { productosService, cajaService, chatbotService } from '@/services'
 import { encolarVenta, sincronizarOutbox, listarVentas, pendientes, type VentaOutbox } from '@/services/outboxOffline'
+import { imprimirTirilla, impresionAutomatica } from '@/services/impresion'
 import { useFormateo, useDebounce, useScanner, useWS } from '@/hooks'
 import type { WSEvent } from '@/hooks'
 import { CATEGORIAS_ICONOS, METODO_PAGO_LABEL } from '@/config/constants'
@@ -230,6 +231,7 @@ export default function PuntoVenta() {
 
       // Mostrar tirilla — el cobro ya ocurrió en caja
       setFacturaVisible({
+        ventaId: data.ventaId,
         numero: data.ventaNum ?? `OFF-${data.idempotencyKey.slice(0, 8).toUpperCase()}`,
         fecha: new Date(),
         cajero: empleado?.nombre,
@@ -240,6 +242,13 @@ export default function PuntoVenta() {
         metodoPago: metodo
       })
       refrescarOutbox()
+
+      // Auto-impresión (red o USB) si el cajero la activó
+      if (impresionAutomatica() && data.ventaId) {
+        imprimirTirilla(data.ventaId, { abrirCajon: true })
+          .then(res => { if (!res.impreso) toast('Sin impresora configurada para auto-imprimir', { icon: '🖨️' }) })
+          .catch(() => undefined)
+      }
     },
     onError: (err: any) => {
       // Aquí solo llega si falló la escritura local (IndexedDB)
@@ -310,7 +319,7 @@ export default function PuntoVenta() {
   return (
     <>
       {facturaVisible && (
-        <InvoicePreview venta={facturaVisible} onClose={handleCerrarTirilla} />
+        <InvoicePreview venta={facturaVisible} ventaId={facturaVisible.ventaId} onClose={handleCerrarTirilla} />
       )}
 
       {alertasInteraccion && (

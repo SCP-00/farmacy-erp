@@ -1,13 +1,41 @@
+import { useState } from 'react'
 import { Printer, X } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { imprimirTirilla } from '@/services/impresion'
 
 interface InvoiceProps {
   venta: any
   onClose: () => void
+  /** Id de la venta en el servidor (necesario para imprimir en térmica). */
+  ventaId?: string
 }
 
-export default function InvoicePreview({ venta, onClose }: InvoiceProps) {
+export default function InvoicePreview({ venta, onClose, ventaId }: InvoiceProps) {
+  const [imprimiendo, setImprimiendo] = useState(false)
+
   const handlePrint = () => {
     window.print()
+  }
+
+  const handleImprimirTermica = async () => {
+    if (!ventaId) {
+      toast('Venta aún no sincronizada: use la impresión del navegador', { icon: '🖨️' })
+      window.print()
+      return
+    }
+    setImprimiendo(true)
+    try {
+      const res = await imprimirTirilla(ventaId, { abrirCajon: true })
+      if (res.impreso) {
+        toast.success('Tirilla enviada a la impresora')
+      } else {
+        toast.error(res.motivo ?? 'No hay impresora configurada')
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error ?? err?.message ?? 'No se pudo imprimir')
+    } finally {
+      setImprimiendo(false)
+    }
   }
 
   // Estilos pensados para impresora térmica de 80mm
@@ -15,6 +43,9 @@ export default function InvoicePreview({ venta, onClose }: InvoiceProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm print:bg-white print:fixed print:inset-0 print:z-[9999]">
       {/* Botones de acción (ocultos al imprimir) */}
       <div className="absolute top-4 right-4 flex gap-3 print:hidden">
+        <button onClick={handleImprimirTermica} disabled={imprimiendo} className="flex items-center gap-2 px-4 py-2 bg-teal-700 text-white rounded-xl font-medium hover:bg-teal-600 disabled:opacity-50 transition shadow-lg">
+          <Printer size={18} /> {imprimiendo ? 'Imprimiendo...' : 'Imprimir en térmica'}
+        </button>
         <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-white text-gray-800 rounded-xl font-medium hover:bg-gray-100 transition shadow-lg">
           <Printer size={18} /> Imprimir tirilla
         </button>
