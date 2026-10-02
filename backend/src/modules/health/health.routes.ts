@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express'
 import { prisma } from '../../config/database'
 import { cache } from '../../config/redis'
 import { responder } from '../../utils/respuesta.utils'
+import { evaluarRespaldo } from '../../utils/respaldo.utils'
 
 export const healthRouter: Router = Router()
 
@@ -42,4 +43,19 @@ healthRouter.get('/deep', async (_req: Request, res: Response) => {
     uptimeSegundos: Math.floor(process.uptime()),
     latenciaTotalMs: Date.now() - inicio,
   })
+})
+
+// ── GET /health/backup — frescura del último respaldo ───────
+// Lo consumen los monitores/alertas para avisar si el respaldo falló o
+// se atrasó. Devuelve solo el estado (sin rutas ni nombres de archivo).
+healthRouter.get('/backup', async (_req: Request, res: Response) => {
+  try {
+    const [estadoParam, maxParam] = await Promise.all([
+      prisma.configParam.findUnique({ where: { clave: 'BACKUP_ULTIMO_OK' } }),
+      prisma.configParam.findUnique({ where: { clave: 'BACKUP_MAX_HORAS' } }),
+    ])
+    const maxHoras = Number(maxParam?.valor ?? 26)
+    const estado = evaluarRespaldo(estadoParam?.valor ?? null, maxHoras)
+    return responder.ok(res, { ...estado, maxHoras })
+  } catch (err) { return responder.serverError(res, err) }
 })

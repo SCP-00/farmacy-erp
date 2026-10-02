@@ -11,6 +11,7 @@ import { inventarioService } from '@/services'
 import { useAuth, usePermisos, usePushNotifications } from '@/hooks'
 import { useUiStore } from '@/store/uiStore'
 import ThemeToggle from '@/components/shared/ThemeToggle'
+import AvisoActualizacion from '@/components/shared/AvisoActualizacion'
 
 interface NavItem {
   label: string
@@ -257,6 +258,7 @@ export default function AdminLayout() {
 
         {/* Contenido de cada página */}
         <div className="flex-1 p-6">
+          <AvisoActualizacion />
           <Outlet />
         </div>
       </main>

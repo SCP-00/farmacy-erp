@@ -2,6 +2,7 @@ import cron from 'node-cron'
 import { prisma } from '../config/database'
 import { encolarEmail } from './queue'
 import { logger } from '../utils/logger'
+import { evaluarRespaldo } from '../utils/respaldo.utils'
 
 // Cada día a las 7:00 AM hora Colombia
 const CRON_HORARIO = '0 7 * * *'
@@ -13,6 +14,7 @@ export function iniciarJobAlertas(): void {
       logger.info('[Job Alertas] Iniciando verificación diaria de inventario...')
       await verificarVencimientos()
       await verificarStockMinimo()
+      await verificarRespaldo()
     },
     { timezone: 'America/Bogota' }
   )
@@ -131,6 +133,40 @@ async function verificarVencimientos(): Promise<void> {
     }
   } catch (err) {
     logger.error('[Job Alertas] Error verificando vencimientos:', err)
+  }
+}
+
+// ── Verifica la frescura del respaldo de la base de datos ──
+// El script database/scripts/verificar-backup.sh escribe BACKUP_ULTIMO_OK.
+// Si el respaldo no se hizo, falló o se atrasó, se alerta a los admins.
+export async function verificarRespaldo(): Promise<void> {
+  try {
+    const [estadoParam, maxParam] = await Promise.all([
+      prisma.configParam.findUnique({ where: { clave: 'BACKUP_ULTIMO_OK' } }),
+      prisma.configParam.findUnique({ where: { clave: 'BACKUP_MAX_HORAS' } }),
+    ])
+    const maxHoras = Number(maxParam?.valor ?? 26)
+    const estado = evaluarRespaldo(estadoParam?.valor ?? null, maxHoras)
+
+    if (!estado.vencido) {
+      logger.info(`[Job Alertas] Respaldo OK (hace ${estado.horasDesde} h)`)
+      return
+    }
+
+    logger.error(`[Job Alertas] RESPALDO: ${estado.motivo}`)
+    const admins = await prisma.empleado.findMany({
+      where: { rol: 'ADMINISTRADOR', activo: true },
+      select: { email: true },
+    })
+    for (const admin of admins) {
+      encolarEmail(
+        admin.email,
+        '🚨 Farmacy: respaldo de base de datos',
+        `<pre style="font-family:sans-serif;padding:20px">${estado.motivo}\n\nVerificá el respaldo con: database/scripts/verificar-backup.sh</pre>`,
+      )
+    }
+  } catch (err) {
+    logger.error('[Job Alertas] Error verificando el respaldo:', err)
   }
 }
 

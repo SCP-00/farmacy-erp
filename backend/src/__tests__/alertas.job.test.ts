@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // ── Hoisted mocks para vi.mock ─────────────────────────────
-const { mockLoteFindMany, mockAlertaDeleteMany, mockAlertaCreate, mockEmpleadoFindMany, mockProductoFindMany } =
+const { mockLoteFindMany, mockAlertaDeleteMany, mockAlertaCreate, mockEmpleadoFindMany, mockProductoFindMany, mockConfigFindUnique } =
   vi.hoisted(() => ({
     mockLoteFindMany: vi.fn(),
     mockAlertaDeleteMany: vi.fn(),
     mockAlertaCreate: vi.fn(),
     mockEmpleadoFindMany: vi.fn(),
     mockProductoFindMany: vi.fn(),
+    mockConfigFindUnique: vi.fn(),
   }))
 
 vi.mock('../config/database', () => ({
@@ -19,6 +20,7 @@ vi.mock('../config/database', () => ({
       create: mockAlertaCreate,
     },
     empleado: { findMany: mockEmpleadoFindMany },
+    configParam: { findUnique: mockConfigFindUnique },
   },
 }))
 
@@ -44,9 +46,46 @@ vi.mock('node-cron', () => ({
   schedule: vi.fn(),
 }))
 
-import { obtenerUmbral, UMBRALES_DIAS, iniciarJobAlertas } from '../jobs/alertas'
+import { obtenerUmbral, UMBRALES_DIAS, iniciarJobAlertas, verificarRespaldo } from '../jobs/alertas'
 import { logger } from '../utils/logger'
+import { encolarEmail } from '../jobs/queue'
 import cron from 'node-cron'
+
+describe('verificarRespaldo()', () => {
+  beforeEach(() => { vi.clearAllMocks() })
+
+  it('no alerta cuando el respaldo está vigente', async () => {
+    const fecha = new Date(Date.now() - 3_600_000).toISOString()
+    mockConfigFindUnique.mockImplementation(({ where }: any) => Promise.resolve(
+      where.clave === 'BACKUP_ULTIMO_OK' ? { valor: JSON.stringify({ ok: true, fecha }) } : null))
+    mockEmpleadoFindMany.mockResolvedValue([{ email: 'admin@test.co' }])
+
+    await verificarRespaldo()
+
+    expect(logger.info).toHaveBeenCalled()
+    expect(encolarEmail).not.toHaveBeenCalled()
+  })
+
+  it('alerta a todos los administradores cuando el respaldo FALLÓ', async () => {
+    mockConfigFindUnique.mockImplementation(({ where }: any) => Promise.resolve(
+      where.clave === 'BACKUP_ULTIMO_OK' ? { valor: JSON.stringify({ ok: false, fecha: new Date().toISOString() }) } : null))
+    mockEmpleadoFindMany.mockResolvedValue([{ email: 'a@test.co' }, { email: 'b@test.co' }])
+
+    await verificarRespaldo()
+
+    expect(logger.error).toHaveBeenCalled()
+    expect(encolarEmail).toHaveBeenCalledTimes(2)
+  })
+
+  it('alerta cuando no hay registro de respaldo', async () => {
+    mockConfigFindUnique.mockResolvedValue(null)
+    mockEmpleadoFindMany.mockResolvedValue([{ email: 'a@test.co' }])
+
+    await verificarRespaldo()
+
+    expect(encolarEmail).toHaveBeenCalledTimes(1)
+  })
+})
 
 // ── Tests de la función pura obtenerUmbral ─────────────────
 describe('obtenerUmbral()', () => {

@@ -4,10 +4,17 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
 import viteCompression from 'vite-plugin-compression'
+import { readFileSync } from 'node:fs'
+
+// Versión de la app, tomada de package.json (para el chequeo de actualizaciones)
+const { version: APP_VERSION } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
 
 export default defineConfig({
   // CDN base path: configurable via VITE_CDN_URL (default / para desarrollo)
   base: process.env.VITE_CDN_URL || '/',
+
+  // Expuesta al bundle para comparar contra la última release publicada
+  define: { 'import.meta.env.VITE_APP_VERSION': JSON.stringify(APP_VERSION) },
 
   plugins: [
     // Compresión Brotli en build de producción
