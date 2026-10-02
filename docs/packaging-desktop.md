@@ -8,9 +8,14 @@
 |---|---|---|---|
 | **Instalación** | Chrome/Edge → "Instalar app" | Instalador NSIS `.exe` (2,3 MB) | Un `.exe` portable (74 MB), sin instalación |
 | **Tamaño** | 0 (usa el navegador ya instalado) | 7,9 MB | 74 MB |
+| **Frontend** | Servido por el backend | **Embebido en el .exe** | Servido por el backend |
 | **Servidor** | El que sirve la web | Configurable en el login | `FARMACY_SERVER_URL` o configurable en el login |
 | **Offline (POS)** | ✅ Outbox IndexedDB | ✅ Outbox IndexedDB | ✅ Outbox IndexedDB |
 | **Ideal para** | Prueba rápida, cajeros con navegador | Producción multi-sucursal | Equipos bloqueados (sin instalar nada) |
+
+> ⚠️ **Electron necesita que el backend sirva la SPA.** A diferencia de Tauri (que embebe `frontend/dist` dentro del `.exe`), Electron carga una URL: `http://localhost:3000` por defecto. Si el backend no sirve el frontend, el `.exe` abre un `{"ok":false,"error":"Ruta no encontrada"}` en vez de la aplicación.
+>
+> Solución: configura `FRONTEND_DIST_PATH` apuntando a `frontend/dist` en el `.env` del servidor (ver [Servir la SPA desde el backend](#servir-la-spa-desde-el-backend-sin-nginx)). Es un requisito solo si el servidor no tiene Nginx/Caddy delante.
 
 Las tres rutas comparten:
 - **Ventana propia / acceso directo** en el escritorio.
@@ -90,6 +95,26 @@ Salida: `desktop/dist-electron/Farmacy-Portable-1.0.0.exe` (~74 MB).
 
 ---
 
+## Servir la SPA desde el backend (sin Nginx)
+
+En producción con Docker, Nginx sirve el frontend estático con `try_files` y el backend solo expone la API. Pero en el escenario LAN de una farmacia —un servidor Windows, sin proxy delante— no hay Nginx, y el cliente de Electron se queda sin interfaz.
+
+Para eso el backend puede servir la SPA si se le indica dónde está el build:
+
+```bash
+# en el .env del servidor (ruta ABSOLUTA)
+FRONTEND_DIST_PATH=/d/farmacy/frontend/dist
+```
+
+Con la variable definida:
+
+- `/` y las rutas del router (`/admin/ventas`, `/carrito`...) devuelven `index.html`.
+- Los assets de `/assets/` se sirven con `Cache-Control: immutable` (llevan hash en el nombre); `index.html`, `sw.js` y el manifest van con `no-cache` para que una actualización se vea sin reinstalar.
+- **Las rutas `/api/*` nunca devuelven HTML**: siguen respondiendo JSON, y un 404 de API sigue siendo un 404 JSON.
+- El middleware se monta **antes** del rate limit global a propósito: una carga de la SPA pide decenas de archivos (el service worker precachea ~83) y, de contarlos contra el límite de 100 peticiones/15 min, la segunda recarga quedaría bloqueada para el cajero.
+
+Sin la variable, el comportamiento es el de siempre: solo API y el 404 en JSON.
+
 ## Configurar el servidor API
 
 El frontend resuelve la URL del backend en este orden:
@@ -120,6 +145,7 @@ Esto permite el escenario de **empresa real**: un servidor central (VPS/nube con
 
 - La versión se inyecta en el bundle desde `frontend/package.json` (`VITE_APP_VERSION`).
 - El panel admin consulta la última release (`VITE_UPDATE_URL`, por defecto la API de GitHub del repo) y muestra un **banner** con enlace de descarga si hay una versión mayor.
+- Para que esa llamada no la bloquee la CSP del backend, `https://api.github.com` está en `connectSrc` (`backend/src/app.ts`). Si cambias la CSP, verifícalo con la consola del navegador.
 - El aviso se puede ocultar y no vuelve a aparecer hasta la siguiente versión.
 - Funciona en los tres empaquetados por igual y **no requiere firma de código**.
 
