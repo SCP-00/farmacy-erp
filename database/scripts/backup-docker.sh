@@ -45,7 +45,6 @@ do_backup() {
   pg_dump -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" \
     --no-owner \
     --no-acl \
-    --compress=9 \
     --verbose \
     2>"${LOG_FILE}" \
     | gzip > "${BACKUP_FILE}"

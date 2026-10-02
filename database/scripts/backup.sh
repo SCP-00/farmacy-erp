@@ -31,11 +31,17 @@ mkdir -p "$BACKUP_DIR"
 echo "📦 Iniciando backup de ${DB_NAME} en ${DB_HOST}:${DB_PORT}..."
 echo "   Destino: ${BACKUP_DIR}/${FILENAME}"
 
+# ── Binarios de PostgreSQL (PATH o instalación típica) ─────
+if command -v pg_dump >/dev/null 2>&1; then PG=""
+elif [ -x "/c/Program Files/PostgreSQL/15/bin/pg_dump" ]; then PG="/c/Program Files/PostgreSQL/15/bin/"
+elif [ -x "/usr/lib/postgresql/15/bin/pg_dump" ]; then PG="/usr/lib/postgresql/15/bin/"
+else echo "❌ pg_dump no encontrado. Definí PG_BIN=/ruta/bin"; exit 1; fi
+PG_DUMP="${PG_BIN:-$PG}pg_dump"
+
 export PGPASSWORD="$DB_PASS"
-pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+"$PG_DUMP" -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
   --no-owner \
   --no-acl \
-  --compress=9 \
   --verbose \
   2>"${BACKUP_DIR}/backup_${TIMESTAMP}.log" \
   | gzip > "${BACKUP_DIR}/${FILENAME}"
@@ -55,6 +61,24 @@ fi
 find "$BACKUP_DIR" -name "farmacy_backup_*.sql.gz" -mtime +${RETENTION_DAYS} -delete
 find "$BACKUP_DIR" -name "backup_*.log" -mtime +${RETENTION_DAYS} -delete
 echo "🧹 Backups anteriores a ${RETENTION_DAYS} días eliminados"
+
+# ── Copia FUERA DEL SITIO (opcional pero recomendada) ──────
+# Un backup en el mismo equipo no protege contra fallo del disco.
+# BACKUP_REMOTE_TARGET ejemplos:
+#   s3:bucket-farmacy/backups        (rclone)
+#   b2:bucket-farmacy                (rclone)
+#   /mnt/nas/backups                 (NAS montado)
+if [ -n "${BACKUP_REMOTE_TARGET:-}" ]; then
+  echo "☁️  Copiando fuera del sitio → ${BACKUP_REMOTE_TARGET}"
+  if command -v rclone >/dev/null 2>&1 && [[ "$BACKUP_REMOTE_TARGET" == *:* ]]; then
+    rclone copy "${BACKUP_DIR}/${FILENAME}" "${BACKUP_REMOTE_TARGET}" && echo "   ✅ Copiado con rclone"
+  else
+    cp "${BACKUP_DIR}/${FILENAME}" "${BACKUP_REMOTE_TARGET}/" && echo "   ✅ Copiado a ${BACKUP_REMOTE_TARGET}"
+  fi
+else
+  echo "ℹ️  BACKUP_REMOTE_TARGET no definido - el backup queda SOLO en este equipo."
+  echo "   Definilo (p. ej. s3:bucket-farmacy) para tener copia fuera del sitio."
+fi
 
 # ── Resumen ────────────────────────────────────────────────
 echo ""

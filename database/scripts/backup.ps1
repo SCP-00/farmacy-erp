@@ -47,7 +47,9 @@ $arguments = @(
     "-d", $Env:PGDATABASE
     "--no-owner"
     "--no-acl"
-    "--compress=9"
+    # NOTA: sin --compress — el flujo se comprime con gzip abajo.
+    # Pasar --compress Y gzip produce un archivo DOBLEMENTE comprimido que
+    # NO se puede restaurar con `gunzip -c file | psql`.
     "--verbose"
 )
 
