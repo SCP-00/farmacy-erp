@@ -113,3 +113,19 @@ Esto permite el escenario de **empresa real**: un servidor central (VPS/nube con
 - **Tauri**: GitHub Actions con `tauri-apps/tauri-action` puede generar instaladores para Windows/macOS/Linux en cada tag (`v*`).
 - **Electron**: `electron-builder --win --linux --mac` en CI; para firmar, define `CSC_LINK` y `CSC_KEY_PASSWORD` (certificado de code-signing) y los artefactos saldrán firmados.
 - **Actualizaciones automáticas**: Tauri updater + endpoint de firma; Electron `electron-updater` contra GitHub Releases.
+
+## Actualizaciones
+
+**Implementado — aviso de nueva versión (Tauri, Electron y PWA):**
+
+- La versión se inyecta en el bundle desde `frontend/package.json` (`VITE_APP_VERSION`).
+- El panel admin consulta la última release (`VITE_UPDATE_URL`, por defecto la API de GitHub del repo) y muestra un **banner** con enlace de descarga si hay una versión mayor.
+- El aviso se puede ocultar y no vuelve a aparecer hasta la siguiente versión.
+- Funciona en los tres empaquetados por igual y **no requiere firma de código**.
+
+**Auto-actualización silenciosa (requiere infraestructura):** la instalación
+misma de la nueva versión sin intervención del usuario exige **firma de código**. Pasos:
+
+1. Obtener un certificado de code-signing.
+2. **Tauri**: agregar `tauri-plugin-updater`, configurar `plugins.updater.endpoints` y `pubkey` en `tauri.conf.json`, y firmar los artefactos.
+3. **Electron**: `electron-updater` con `publish` apuntando a GitHub Releases.

@@ -25,6 +25,8 @@ This folder is the living documentation hub for Farmacy (SGF).
 - 📦 **Distribución**:
   - [Empaquetado escritorio y PWA](packaging-desktop.md) — Instalador Tauri (.exe), Electron portable, PWA instalable; conexión del POS a servidores en nube/LAN/local
   - [ADR-0004 — POS offline-first](adr/0004-pos-offline-first.md) — Outbox IndexedDB, idempotencia de ventas, cola de excepciones
+  - [Impresora térmica ESC/POS](impresion-termica.md) — Tirilla de 80 mm por red (TCP 9100) o USB directo, apertura del cajón de dinero
+  - [Backups, verificación y restore](backups.md) — Backup probado (se restaura de verdad), copia fuera del sitio y alertas de respaldo
 - 🔒 **Security**:
   - [Seguridad y Compliance](security/compliance.md) — Pentest, medidas, INVIMA, persistencia DB
 

@@ -98,3 +98,7 @@ Thumbs.db
 .vscode/settings.json
 *.swp
 *.swo
+
+# ── Herramientas locales ─────────────────────────────────
+.freebuff/
+scripts-temp/
