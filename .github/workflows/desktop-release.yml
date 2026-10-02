@@ -1,0 +1,106 @@
+# ══════════════════════════════════════════════════════════
+#  FARMACY — Release de escritorio (Windows)
+#
+#  Corre en cada tag v* (y a mano desde Actions). Compila los
+#  instaladores y los adjunta a la release de ese tag:
+#
+#    1. Tauri  → instalador NSIS + ejecutable (frontend embebido)
+#    2. Electron → portable de un solo .exe
+#
+#  ⚠️  Sin certificado de code-signing los instaladores salen SIN
+#     firmar y Windows SmartScreen mostrará un aviso. Con el secreto
+#     TAURI_SIGNING_PRIVATE_KEY y TAVIS_AUTH_TOKEN se firman solos.
+#
+#  ⚠️  Monorepo pnpm: instalar siempre desde la raíz.
+# ══════════════════════════════════════════════════════════
+
+name: Desktop release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag a compilar y publicar (ej. v1.0.1)'
+        required: true
+        type: string
+
+# Necesario para crear la release y subir los adjuntos
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "11"
+
+jobs:
+  windows:
+    name: Instaladores Windows (Tauri + Electron)
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm ${{ env.PNPM_VERSION }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      # ── Tauri: instalador NSIS + ejecutable ───────────────
+      # projectPath: porque src-tauri vive en frontend/, no en la raíz.
+      - name: Build y publicar Tauri
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Opcionales: si existen, el instalador sale firmado
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: frontend
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: Farmacy ${{ github.event.inputs.tag || github.ref_name }}
+          releaseBody: |
+            Descarga el instalador de Windows.
+
+            - **Tauri (2 MB)**: recomendado. Trae la aplicacion embebida.
+            - **Electron portable (74 MB)**: un solo archivo, sin instalar.
+              Requiere que el servidor sirva la SPA (`FRONTEND_DIST_PATH`).
+
+            Los instaladores no estan firmados: SmartScreen puede mostrar un aviso.
+          releaseDraft: false
+          prerelease: false
+
+      # ── Electron: portable de un solo .exe ───────────────
+      - name: Build Electron portable
+        working-directory: ./desktop
+        run: pnpm exec electron-builder --win portable
+
+      # El cuerpo de la release lo pone tauri-action (arriba); aquí solo
+      # se adjuntan los binarios, sin reescribir la descripción.
+      - name: Adjuntar el portable a la release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            desktop/dist-electron/*.exe
+          fail_on_unmatched_files: true

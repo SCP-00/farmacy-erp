@@ -133,6 +133,28 @@ Esto permite el escenario de **empresa real**: un servidor central (VPS/nube con
 - **Tauri**: capabilities mínimas (ventana + abrir enlaces externos); CSP configurable en `frontend/src-tauri/tauri.conf.json`.
 - Los instaladores no están firmados digitalmente (sin certificado de código); Windows SmartScreen puede mostrar un aviso — es esperado en software open-source sin firma.
 
+## Publicar una release (automatizado)
+
+**Cada tag `v*` compila y publica los instaladores.** El workflow `.github/workflows/desktop-release.yml` corre en `windows-latest`, compila el instalador de Tauri con `tauri-action`, compila el portable de Electron con `electron-builder` y adjunta ambos a la release de ese tag.
+
+```bash
+# 1. Compilar y probar en local
+cd frontend && pnpm exec tauri build
+cd ../desktop && pnpm run dist
+
+# 2. Commit + tag + push del tag
+git tag -a v1.1.0 -m "v1.1.0 — descripcion de los cambios"
+git push origin main --tags
+
+# 3. La release se crea sola en GitHub con los .exe adjuntos
+```
+
+También se puede lanzar a mano desde **Actions → Desktop release → Run workflow** indicando el tag.
+
+**Los artefactos no se versionan en git** (`.gitignore` excluye `frontend/src-tauri/target/`, `desktop/dist-electron/` y `dist/`); la release de GitHub es el único lugar del que se descargan. Eso significa que **subir código no actualiza los `.exe`** — hace falta un tag nuevo.
+
+**Firma de código:** los instaladores salen sin firmar y SmartScreen mostrará un aviso. Para firmarlos, define los secretos `TAURI_SIGNING_PRIVATE_KEY` y `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` en el repositorio; el workflow los usa automáticamente.
+
 ## Compilación cruzada y firma (roadmap)
 
 - **Tauri**: GitHub Actions con `tauri-apps/tauri-action` puede generar instaladores para Windows/macOS/Linux en cada tag (`v*`).
