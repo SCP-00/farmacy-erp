@@ -88,6 +88,11 @@ const envSchema = z.object({
   // Frontend
   FRONTEND_URL: z.string().default('http://localhost:5173'),
 
+  // Path absoluto al build de Vite (frontend/dist). Si está definido y existe,
+  // el backend sirve la SPA además de la API — necesario en LAN sin Nginx
+  // y para que el cliente de escritorio Electron no abra un JSON 404.
+  FRONTEND_DIST_PATH: z.string().optional(),
+
   // CORS — orígenes permitidos separados por coma (para producción)
   CORS_ORIGINS: z.string().default(''),
 

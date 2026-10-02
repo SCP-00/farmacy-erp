@@ -18,6 +18,7 @@ import { setupSwagger } from './config/swagger'
 import { existsSync } from 'fs'
 import path from 'path'
 import { prerenderMiddleware } from './services/prerender.service'
+import { staticFrontendMiddleware } from './services/staticFrontend.service'
 
 // ── Módulos ─────────────────────────────────────────────
 import { authRouter } from './modules/auth/auth.routes'
@@ -90,7 +91,10 @@ export function createApp(): Express {
           scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https://*.cloudinary.com', 'https://checkout.wompi.co', 'https://js.stripe.com', 'https://www.mercadopago.com.co'],
           styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
           imgSrc: ["'self'", 'data:', 'blob:', 'https://*.cloudinary.com', 'https://res.cloudinary.com', 'https://checkout.wompi.co', 'https://q.stripe.com'],
-          connectSrc: ["'self'", 'https://sandbox.wompi.co', 'https://api.wompi.co', 'https://api.mercadopago.com', 'https://api.stripe.com'],
+          // api.github.com: lo consulta el aviso de nueva versión del desktop
+          // (frontend/src/services/actualizacion.ts). Sin esta entrada el
+          // navegador lo bloquea y el aviso nunca aparece.
+          connectSrc: ["'self'", 'https://sandbox.wompi.co', 'https://api.wompi.co', 'https://api.mercadopago.com', 'https://api.stripe.com', 'https://api.github.com'],
           fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
           frameSrc: ["'self'", 'https://checkout.wompi.co', 'https://js.stripe.com', 'https://www.mercadopago.com.co'],
           objectSrc: ["'none'"],
@@ -127,6 +131,23 @@ export function createApp(): Express {
   app.use(express.json({ limit: '10mb' }))
   app.use(express.urlencoded({ extended: true }))
   app.use(loggerHttp)
+
+  // ── SPA compilada (opcional, antes del rate limit) ────
+  // Va ANTES de limitarPeticiones a propósito: una carga de la SPA pide
+  // decenas de archivos (el service worker precachea ~83). Si los assets
+  // contaran contra el límite de 100 peticiones/15 min, la segunda
+  // recarga de la app quedaría bloqueada para el cajero.
+  // Montado aquí, antes de las rutas de la API, porque salta (/api, /ws).
+  if (env.FRONTEND_DIST_PATH) {
+    const distPath = path.resolve(env.FRONTEND_DIST_PATH)
+    if (existsSync(distPath)) {
+      app.use(staticFrontendMiddleware(distPath))
+      logger.info(`[SPA] Sirviendo frontend compilado desde ${distPath}`)
+    } else {
+      logger.warn(`[SPA] FRONTEND_DIST_PATH configurado pero no encontrado: ${distPath}`)
+    }
+  }
+
   app.use(limitarPeticiones)
 
   // ── Swagger / OpenAPI docs ────────────────────────────
